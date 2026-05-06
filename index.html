@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asku Lasku — Say it in every language</title>
+  <meta name="description" content="Type any word or phrase and watch it bloom across 30+ languages in beautiful animations. Inspired by the Tamil song Asku Lasku.">
+  <meta property="og:title" content="Asku Lasku — Say it in every language">
+  <meta property="og:description" content="Type any phrase. Watch it bloom across 30+ languages in eye-catching animations.">
+  <meta property="og:type" content="website">
+
+  <!-- Fonts: Inter (UI) + Noto Sans family (all scripts) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Thai:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700&family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Full-screen aurora canvas (always running) -->
+  <canvas id="stage"></canvas>
+
+  <!-- UI overlay -->
+  <div id="ui">
+
+    <!-- Navigation -->
+    <nav id="nav">
+      <a href="index.html" class="logo" aria-label="Asku Lasku home">
+        <span class="logo-text">Asku Lasku</span>
+        <span class="logo-sub">ஆஸ்கு லாஸ்கு</span>
+      </a>
+      <div class="nav-links">
+        <a href="about.html">About &amp; Credits</a>
+      </div>
+    </nav>
+
+    <!-- ── IDLE: Input panel ────────────────────────────────────────────── -->
+    <div id="inputPanel">
+      <div class="hero">
+        <h1 class="hero-title">
+          Say it in<br>
+          <span class="shimmer-text">every language</span>
+        </h1>
+        <p class="hero-sub">
+          Type any word or phrase. Watch it transform across 30+ languages<br>
+          in beautiful animations — then export as GIF or video to share.
+        </p>
+
+        <div class="input-row">
+          <input
+            type="text"
+            id="phraseInput"
+            class="phrase-input"
+            placeholder="love, hello, peace…"
+            maxlength="60"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Enter a word or phrase to translate"
+          >
+          <button id="animateBtn" class="animate-btn" aria-label="Start animation">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            <span>Animate</span>
+          </button>
+        </div>
+
+        <div id="langBadges" aria-label="Supported languages" role="list">
+          <!-- Populated by app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ── LOADING: Translation panel ──────────────────────────────────── -->
+    <div id="loadingPanel" class="hidden">
+      <div class="loading-ring" role="progressbar" aria-label="Translating"></div>
+      <p class="loading-text">
+        Translating into <span id="loadCount">0</span> languages
+      </p>
+      <div id="loadingLangs" aria-live="polite"></div>
+    </div>
+
+    <!-- ── PLAYING: Playback controls ──────────────────────────────────── -->
+    <div id="playbackPanel" class="hidden">
+
+      <!-- Language counter -->
+      <div class="lang-info">
+        <div class="lang-counter" id="langCounter" aria-live="polite">1 / 30</div>
+      </div>
+
+      <!-- Progress bar -->
+      <div id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+        <div id="progressFill"></div>
+      </div>
+
+      <!-- Controls bar -->
+      <div id="controls">
+        <!-- Back to input -->
+        <button id="backBtn" class="ctrl-btn" title="New phrase (Esc)" aria-label="Back to input">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M19 12H5M5 12L12 5M5 12L12 19"/>
+          </svg>
+        </button>
+
+        <!-- Play / Pause / Loop -->
+        <div class="ctrl-group">
+          <button id="playPauseBtn" class="ctrl-btn primary" title="Play / Pause (Space)" aria-label="Play or pause">
+            <svg id="pauseIcon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6"  y="4" width="4" height="16" rx="1"/>
+              <rect x="14" y="4" width="4" height="16" rx="1"/>
+            </svg>
+            <svg id="playIcon" width="18" height="18" viewBox="0 0 24 24"
+                 fill="currentColor" class="hidden">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+          </button>
+
+          <button id="loopBtn" class="ctrl-btn active" title="Toggle loop" aria-label="Toggle loop" aria-pressed="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 1l4 4-4 4"/>
+              <path d="M3 11V9a4 4 0 014-4h14"/>
+              <path d="M7 23l-4-4 4-4"/>
+              <path d="M21 13v2a4 4 0 01-4 4H3"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Export -->
+        <div class="export-group">
+          <button id="exportVideoBtn" class="export-btn" title="Export WebM video" aria-label="Export video">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Video</span>
+          </button>
+          <button id="exportGifBtn" class="export-btn" title="Export animated GIF" aria-label="Export GIF">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>GIF</span>
+          </button>
+        </div>
+      </div>
+    </div><!-- /playbackPanel -->
+
+  </div><!-- /ui -->
+
+  <!-- Toast notification -->
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Vendor -->
+  <script src="vendor/gif.js"></script>
+
+  <!-- App -->
+  <script src="js/languages.js"></script>
+  <script src="js/stage.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
