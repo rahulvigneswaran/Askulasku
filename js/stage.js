@@ -211,6 +211,8 @@ class Stage {
     bg.addColorStop(1,   '#070707');
     this.ctx.fillStyle = bg;
     this.ctx.fillRect(0, 0, W, H);
+    // Film grain breaks up the subtle dark gradient so H.264 doesn't produce banding
+    if (this.exportMode) this._applyGrain();
 
     const inTransition = this.phase === 'transition' && this.transP < 1;
     const useMorph = (this.transitionMode === 'morph') && !this.exportMode;
@@ -315,42 +317,90 @@ class Stage {
   }
 
   // ── Morph: canvas-only fallback (for export) ───────────────────────────────
+  // Replicates the SVG feColorMatrix gooey threshold:
+  // - Both texts are blurred onto an offscreen canvas (their alphas combine)
+  // - A hard threshold snaps partial-alpha pixels to fully opaque or transparent
+  // - This gives the same liquid-merge boundary as the DOM+SVG version
   _drawMorphCanvas(p) {
-    const ctx   = this.ctx;
-    const foldY = this._foldY();
+    const mainCtx = this.ctx;
+    const foldY   = this._foldY();
+    const flipH   = this._flipH();
+    const dpr     = window.devicePixelRatio || 1;
+    const pw      = this.canvas.width;
+    const ph      = Math.round(flipH * dpr);
 
-    // Outgoing text
-    const f1     = p;
-    const blur1  = Math.min(8 / Math.max(1 - f1, 0.001) - 8, 80);
-    const alpha1 = Math.pow(1 - f1, 0.4);
+    // Same blur/alpha formulas as the DOM morph
+    const blur1  = Math.min(8 / Math.max(1 - p, 0.001) - 8, 80);
+    const alpha1 = Math.pow(1 - p, 0.4);
+    const blur2  = Math.min(8 / Math.max(p,     0.001) - 8, 80);
+    const alpha2 = Math.pow(p, 0.4);
 
-    // Incoming text
-    const f2     = p;
-    const blur2  = Math.min(8 / Math.max(f2, 0.001) - 8, 80);
-    const alpha2 = Math.pow(f2, 0.4);
+    // Render both blurred texts onto a transparent offscreen canvas
+    // (same logical dimensions as the flip zone — foldY is the vertical center of both)
+    const off  = new OffscreenCanvas(pw, ph);
+    const octx = off.getContext('2d');
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    this.ctx = octx; // redirect _drawLines to offscreen
     if (alpha1 > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = alpha1;
-      if (blur1 > 0.3) ctx.filter = `blur(${blur1.toFixed(1)}px)`;
+      octx.save();
+      octx.globalAlpha = alpha1;
+      if (blur1 > 0.3) octx.filter = `blur(${blur1.toFixed(1)}px)`;
       this._drawLines(this.curLines, this.curSize, this.curDir, foldY, 1);
-      ctx.restore();
+      octx.restore();
     }
-
     if (alpha2 > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = alpha2;
-      if (blur2 > 0.3) ctx.filter = `blur(${blur2.toFixed(1)}px)`;
+      octx.save();
+      octx.globalAlpha = alpha2;
+      if (blur2 > 0.3) octx.filter = `blur(${blur2.toFixed(1)}px)`;
       this._drawLines(this.nxtLines, this.nxtSize, this.nxtDir, foldY, 1);
-      ctx.restore();
+      octx.restore();
     }
+    this.ctx = mainCtx;
 
-    // Label cross-fades in the second half
+    // Apply SVG feColorMatrix threshold: A' = clamp(255·A_norm − 140, 0, 1)
+    // In 8-bit this means: alpha < 140 → 0 (transparent), alpha ≥ 140 → 255 (opaque)
+    // The combined blur of both texts causes overlapping regions to exceed the threshold
+    // and "merge" with a crisp liquid boundary — the gooey effect.
+    const imgData = octx.getImageData(0, 0, pw, ph);
+    const d = imgData.data;
+    for (let i = 3; i < d.length; i += 4) {
+      d[i] = d[i] < 140 ? 0 : 255;
+    }
+    octx.putImageData(imgData, 0, 0);
+
+    // Composite onto main canvas with the same 0.5px softening the CSS applies
+    mainCtx.save();
+    mainCtx.filter = 'blur(0.5px)';
+    mainCtx.drawImage(off, 0, 0, this.W, flipH);
+    mainCtx.restore();
+
+    // Label cross-fades
     if (p < 0.5) {
       this._drawLabel(this.curLang, this.curNative, Math.max(0, 1 - p * 2.5), 0);
     } else {
       this._drawLabel(this.nxtLang, this.nxtNative, Math.min(1, (p - 0.5) * 2.5), 0);
     }
+  }
+
+  // ── Film grain (export only) ───────────────────────────────────────────────
+  _applyGrain() {
+    const { W, H, ctx } = this;
+    const tileSize = 96;
+    const off  = new OffscreenCanvas(tileSize, tileSize);
+    const octx = off.getContext('2d');
+    const img  = octx.createImageData(tileSize, tileSize);
+    const d    = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = Math.random() * 22 | 0;
+      d[i] = d[i + 1] = d[i + 2] = n;
+      d[i + 3] = 22; // ~9% opacity — enough to dither, subtle enough not to show
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.fillStyle = ctx.createPattern(off, 'repeat');
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   }
 
   // ── Flip: canvas split-flap ────────────────────────────────────────────────
