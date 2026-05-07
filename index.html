@@ -10,10 +10,25 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=Noto+Sans:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Thai:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700&family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Syne 800 for the bold board display; Space Grotesk as a fallback Latin; Inter for UI -->
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@700&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=Noto+Sans:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Thai:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700&family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+  <!-- SVG filter for the gooey morph effect — must be in the DOM, not the canvas -->
+  <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+    <defs>
+      <filter id="morphThreshold">
+        <!-- High-contrast threshold: pixels above ~55% opacity become opaque, rest transparent -->
+        <feColorMatrix in="SourceGraphic" type="matrix"
+          values="1 0 0 0 0
+                  0 1 0 0 0
+                  0 0 1 0 0
+                  0 0 0 255 -140"/>
+      </filter>
+    </defs>
+  </svg>
 
   <!-- ── Navigation ───────────────────────────────────────────────────────── -->
   <nav id="nav">
@@ -27,138 +42,158 @@
     </div>
   </nav>
 
-  <!-- ── Main: two-column desktop / stacked mobile ────────────────────────── -->
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
   <main class="main">
 
-    <!-- Right column: canvas (appears first visually on mobile via order) -->
+    <!-- Right column: portrait canvas card -->
     <div class="right-col">
       <div class="board-wrap">
         <canvas id="stage" role="img" aria-label="Split-flap translation display"></canvas>
+        <!-- Morph overlay: DOM text + SVG gooey filter — only active in morph mode -->
+        <div class="morph-overlay" id="morphOverlay" aria-hidden="true">
+          <span class="morph-text" id="morphText1"></span>
+          <span class="morph-text" id="morphText2"></span>
+        </div>
       </div>
       <p class="board-caption hidden" id="boardCaption">
         <span class="caption-dot"></span> Previewing <em>love</em>
       </p>
     </div>
 
-    <!-- Left column: all interactive panels -->
+    <!-- Left column: controls -->
     <div class="left-col">
 
-      <!-- Idle: input -->
-      <div id="inputPanel">
-        <h1 class="hero-heading">
-          Say it in<br>
-          <em class="serif">every language.</em>
-        </h1>
-        <p class="hero-sub">
-          Type a word or phrase and watch it flip through 30+ languages
-          in a split&#8209;flap display. Export as GIF or video.
-        </p>
+      <!-- Panels: switch between idle / loading / playback -->
+      <div class="panels">
 
-        <div class="input-row">
-          <input
-            type="text"
-            id="phraseInput"
-            class="phrase-input"
-            placeholder="love, peace, hello world…"
-            maxlength="80"
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="Word or phrase to translate"
-          >
-          <button id="animateBtn" class="animate-btn" aria-label="Start animation">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-            Animate
-          </button>
-        </div>
+        <!-- Idle: input -->
+        <div id="inputPanel">
+          <h1 class="hero-heading">
+            Say it in<br>
+            <em class="serif">every language.</em>
+          </h1>
+          <p class="hero-sub">
+            Type a word or phrase. Watch it morph through 30+ languages,
+            then export as GIF or video.
+          </p>
 
-        <div id="langBadges" aria-label="Supported languages"></div>
-      </div>
-
-      <!-- Loading -->
-      <div id="loadingPanel" class="hidden">
-        <div class="spin" role="progressbar" aria-label="Loading translations"></div>
-        <p class="load-label">
-          Translating into <strong id="loadCount">0</strong> languages
-        </p>
-        <div id="loadingItems" aria-live="polite"></div>
-      </div>
-
-      <!-- Playback controls -->
-      <div id="playbackPanel" class="hidden">
-
-        <div id="progressWrap">
-          <div id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
-            <div id="progressFill"></div>
-          </div>
-          <span id="langCounter" aria-live="polite">1 / 30</span>
-        </div>
-
-        <div id="controls">
-          <button id="backBtn" class="ctrl-btn" title="New phrase (Esc)" aria-label="Back to input">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-              <path d="M19 12H5M5 12L12 5M5 12L12 19"/>
-            </svg>
-          </button>
-
-          <button id="playPauseBtn" class="ctrl-btn primary" title="Play / Pause (Space)" aria-label="Play or pause">
-            <svg id="pauseIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6"  y="4" width="4" height="16" rx="1"/>
-              <rect x="14" y="4" width="4" height="16" rx="1"/>
-            </svg>
-            <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24"
-                 fill="currentColor" class="hidden">
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-          </button>
-
-          <button id="loopBtn" class="ctrl-btn" title="Loop" aria-label="Toggle loop" aria-pressed="false">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/>
-              <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
-            </svg>
-          </button>
-
-          <div class="spacer"></div>
-
-          <div class="export-group">
-            <button id="exportVideoBtn" class="export-btn" aria-label="Export video">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
+          <div class="input-row">
+            <input
+              type="text"
+              id="phraseInput"
+              class="phrase-input"
+              placeholder="love, peace, hello world…"
+              maxlength="80"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Word or phrase to translate"
+            >
+            <button id="animateBtn" class="animate-btn" aria-label="Start animation">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
               </svg>
-              Video
-            </button>
-            <button id="exportGifBtn" class="export-btn" aria-label="Export GIF">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
-              </svg>
-              GIF
+              Animate
             </button>
           </div>
+
+          <div id="langBadges" aria-label="Supported languages"></div>
         </div>
 
-      </div><!-- /#playbackPanel -->
-
-      <!-- Speed control — always visible -->
-      <div class="speed-control">
-        <div class="speed-header">
-          <span class="speed-label-text">Pace</span>
-          <span id="speedVal" class="speed-val">Medium</span>
+        <!-- Loading -->
+        <div id="loadingPanel" class="hidden">
+          <div class="spin" role="progressbar" aria-label="Loading translations"></div>
+          <p class="load-label">
+            Translating into <strong id="loadCount">0</strong> languages…
+          </p>
+          <div id="loadingItems" aria-live="polite"></div>
         </div>
-        <input type="range" id="speedSlider" class="speed-slider"
-               min="1" max="10" value="5" aria-label="Animation pace">
-        <div class="speed-ticks">
-          <span>Slow</span>
-          <span>Fast</span>
+
+        <!-- Playback controls -->
+        <div id="playbackPanel" class="hidden">
+          <div id="progressWrap">
+            <div id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+              <div id="progressFill"></div>
+            </div>
+            <span id="langCounter" aria-live="polite">1 / 30</span>
+          </div>
+
+          <div id="controls">
+            <button id="backBtn" class="ctrl-btn" title="New phrase (Esc)" aria-label="Back to input">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <path d="M19 12H5M5 12L12 5M5 12L12 19"/>
+              </svg>
+            </button>
+
+            <button id="playPauseBtn" class="ctrl-btn primary" title="Play / Pause (Space)" aria-label="Play or pause">
+              <svg id="pauseIcon" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6"  y="4" width="4" height="16" rx="1"/>
+                <rect x="14" y="4" width="4" height="16" rx="1"/>
+              </svg>
+              <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24"
+                   fill="currentColor" class="hidden">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            </button>
+
+            <button id="loopBtn" class="ctrl-btn" title="Loop" aria-label="Toggle loop" aria-pressed="false">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/>
+                <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
+              </svg>
+            </button>
+
+            <div class="spacer"></div>
+
+            <div class="export-group">
+              <button id="exportVideoBtn" class="export-btn" aria-label="Export video">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Video
+              </button>
+              <button id="exportGifBtn" class="export-btn" aria-label="Export GIF">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="7 10 12 15 17 10"/>
+                  <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                GIF
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.panels -->
+
+      <!-- Bottom controls: always visible -->
+      <div class="bottom-controls">
+        <!-- Transition style toggle -->
+        <div class="ctrl-section">
+          <span class="ctrl-section-label">Transition</span>
+          <div class="mode-toggle" role="group" aria-label="Transition style">
+            <button class="mode-btn active" data-mode="morph" aria-pressed="true">Morph</button>
+            <button class="mode-btn" data-mode="flip" aria-pressed="false">Flip-board</button>
+          </div>
+        </div>
+
+        <!-- Pace slider -->
+        <div class="ctrl-section">
+          <div class="speed-header">
+            <span class="ctrl-section-label">Pace</span>
+            <span id="speedVal" class="speed-val">Medium</span>
+          </div>
+          <input type="range" id="speedSlider" class="speed-slider"
+                 min="1" max="10" value="5" aria-label="Animation pace">
+          <div class="speed-ticks">
+            <span>Slow</span>
+            <span>Fast</span>
+          </div>
         </div>
       </div>
 
