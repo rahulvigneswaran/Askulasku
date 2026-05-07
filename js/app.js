@@ -47,14 +47,14 @@ async function fetchOne(lang, phrase) {
 // ── Speed helpers ─────────────────────────────────────────────────────────────
 
 function speedToMs(v) {
-  // speed 1 (slow) → 14 000ms; speed 5 (medium) → ~8 600ms; speed 10 (fast) → 3 500ms
-  return Math.round(14000 - (+v - 1) * 1167);
+  // speed 1 (very slow) → 22 000ms; speed 5 (medium) → ~13 600ms; speed 10 (fast) → 3 000ms
+  return Math.round(22000 - (+v - 1) * 2111);
 }
 
 function speedLabel(v) {
   v = +v;
-  if (v <= 2)  return 'Slow';
-  if (v <= 4)  return 'Steady';
+  if (v <= 2)  return 'Very Slow';
+  if (v <= 4)  return 'Slow';
   if (v <= 6)  return 'Medium';
   if (v <= 8)  return 'Brisk';
   return 'Fast';
@@ -343,17 +343,110 @@ class App {
   // ── Export — Video ─────────────────────────────────────────────────────────
   async _exportVideo() {
     if (this.isExporting) return;
-    if (!window.MediaRecorder) { this._toast('MediaRecorder not supported.', 'error'); return; }
+    // Prefer WebCodecs → MP4 (Chrome 94+); fall back to MediaRecorder
+    if (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined') {
+      return this._exportMP4WebCodecs();
+    }
+    // Safari: native MP4 recording
+    const mimeOrder = [
+      { mime: 'video/mp4;codecs=avc1', ext: 'mp4' },
+      { mime: 'video/mp4',             ext: 'mp4' },
+      { mime: 'video/webm;codecs=vp9', ext: 'webm' },
+      { mime: 'video/webm;codecs=vp8', ext: 'webm' },
+      { mime: 'video/webm',            ext: 'webm' },
+    ];
+    const chosen = mimeOrder.find(({ mime }) => MediaRecorder?.isTypeSupported(mime));
+    if (!chosen) { this._toast('Video export not supported in this browser.', 'error'); return; }
+    return this._exportMediaRecorder(chosen.mime, chosen.ext);
+  }
 
-    const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
-      .find(m => MediaRecorder.isTypeSupported(m));
-    if (!mime) { this._toast('No supported video codec.', 'error'); return; }
-
+  async _exportMP4WebCodecs() {
     this.isExporting = true;
-    // In morph mode, canvas-only rendering is used for export (DOM overlay isn't capturable)
     this.stage.exportMode = true;
     this._toast('Recording…', 'info');
 
+    let fallbackToWebM = false;
+    try {
+      // Use physical canvas pixels; H.264 requires even dimensions
+      const W = Math.round(this.$canvas.width  / 2) * 2;
+      const H = Math.round(this.$canvas.height / 2) * 2;
+      const FPS = 30;
+      const ms  = this._getTotalMs();
+      const frameMs = 1000 / FPS;
+
+      const target = new Mp4Muxer.ArrayBufferTarget();
+      const muxer  = new Mp4Muxer.Muxer({
+        target,
+        video: { codec: 'avc', width: W, height: H },
+        fastStart: 'in-memory',
+      });
+
+      let encodeError = null;
+      const encoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error:  e => { encodeError = e; },
+      });
+
+      const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 6_000_000, framerate: FPS };
+      const support = await VideoEncoder.isConfigSupported(cfg);
+      if (!support.supported) throw new Error('H.264 codec not supported');
+      encoder.configure(cfg);
+
+      this.stage.setLoop(false);
+      this.stage.play(this.translations, ms);
+      this.isPaused = false;
+      this._syncPP();
+
+      let done = false;
+      let frameIndex = 0;
+      const prev = this.stage.onComplete;
+      this.stage.onComplete = () => { done = true; this.stage.onComplete = prev; };
+
+      await new Promise(resolve => {
+        const captureFrame = () => {
+          if (encodeError || done || frameIndex * frameMs > ms + 300) { resolve(); return; }
+          const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
+          try {
+            const vf = new VideoFrame(this.$canvas, { timestamp });
+            encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });
+            vf.close();
+          } catch { /* canvas not ready yet */ }
+          frameIndex++;
+          setTimeout(captureFrame, frameMs);
+        };
+        captureFrame();
+        setTimeout(resolve, ms + 2000);
+      });
+
+      if (encodeError) throw encodeError;
+      await encoder.flush();
+      muxer.finalize();
+
+      this._dl(new Blob([target.buffer], { type: 'video/mp4' }), `asku-lasku-${this._slug()}.mp4`);
+      this._toast('Video saved!', 'success');
+
+    } catch (e) {
+      console.error('MP4 WebCodecs export failed:', e);
+      fallbackToWebM = true;
+    } finally {
+      this.isExporting = false;
+      this.stage.exportMode = false;
+      this.stage.setLoop(this.isLooping);
+    }
+
+    if (fallbackToWebM) {
+      const webmMime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
+        .find(m => MediaRecorder?.isTypeSupported(m));
+      if (webmMime) return this._exportMediaRecorder(webmMime, 'webm');
+      this._toast('Video export failed.', 'error');
+    }
+  }
+
+  async _exportMediaRecorder(mime, ext) {
+    if (!window.MediaRecorder) { this._toast('MediaRecorder not supported.', 'error'); return; }
+    this.isExporting = true;
+    this.stage.exportMode = true;
+    this._toast('Recording…', 'info');
     try {
       const ms     = this._getTotalMs();
       const stream = this.$canvas.captureStream(30);
@@ -375,7 +468,7 @@ class App {
       rec.stop();
       await new Promise(r => { rec.onstop = r; });
 
-      this._dl(new Blob(chunks, { type: mime }), `asku-lasku-${this._slug()}.webm`);
+      this._dl(new Blob(chunks, { type: mime }), `asku-lasku-${this._slug()}.${ext}`);
       this._toast('Video saved!', 'success');
     } catch (e) {
       console.error(e);

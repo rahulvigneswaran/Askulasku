@@ -237,7 +237,13 @@ class Stage {
           this._drawFlip(this.transP);
         }
       } else {
-        this._drawSettled();
+        if (this.exportMode && this.transitionMode === 'morph') {
+          // Clean settled frame for morph export — no flip crease, matches _drawMorphCanvas style
+          this._drawLines(this.curLines, this.curSize, this.curDir, this._foldY(), 1);
+          this._drawLabel(this.curLang, this.curNative, 1, 0);
+        } else {
+          this._drawSettled();
+        }
       }
     }
 
