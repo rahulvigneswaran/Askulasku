@@ -111,9 +111,9 @@ a { color: inherit; }
 
 /* ── Main layout ─────────────────────────────────────────────────────────── */
 .main {
-  max-width: 760px;
+  max-width: 460px;
   margin: 0 auto;
-  padding: 3rem 2rem 5rem;
+  padding: 2.5rem 1.5rem 5rem;
 }
 
 /* ── Hero ────────────────────────────────────────────────────────────────── */
@@ -213,20 +213,23 @@ a { color: inherit; }
 
 /* ── Board ───────────────────────────────────────────────────────────────── */
 .board-wrap {
-  margin: 2rem 0;
-  border-radius: 12px;
+  margin: 1.75rem auto;
+  border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06);
+  /* Portrait 9:16 — max width constrained so it sits nicely on desktop */
+  width: min(320px, 100%);
+  aspect-ratio: 9 / 16;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.07);
 }
 
 [data-theme="dark"] .board-wrap {
-  box-shadow: 0 2px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05);
+  box-shadow: 0 4px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
 }
 
 #stage {
   display:    block;
   width:      100%;
-  height:     clamp(200px, 38vw, 300px);
+  height:     100%;
   background: #131313;
 }
 
@@ -504,4 +507,5 @@ a { color: inherit; }
   .animate-btn       { justify-content: center; }
   .logo-secondary    { display: none; }
   #controls          { flex-wrap: wrap; }
+  .board-wrap        { width: 100%; }
 }

@@ -3,7 +3,6 @@
 // ── Translation ───────────────────────────────────────────────────────────────
 
 async function gtranslate(text, langCode) {
-  // Unofficial Google Translate endpoint — no API key needed
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${langCode}&dt=t&q=${encodeURIComponent(text)}`;
   const res  = await fetch(url);
   const data = await res.json();
@@ -27,15 +26,13 @@ function isOk(translation, source) {
   const t = translation.trim();
   if (!t) return false;
   if (t.toLowerCase() === source.toLowerCase()) return false;
-  // Reject if it's basically a copy of the source with different punctuation
-  const stripped = t.replace(/[^a-z]/gi, '').toLowerCase();
+  const stripped    = t.replace(/[^a-z]/gi, '').toLowerCase();
   const srcStripped = source.replace(/[^a-z]/gi, '').toLowerCase();
   if (stripped === srcStripped) return false;
   return true;
 }
 
 async function fetchOne(lang, phrase) {
-  // Google Translate first, MyMemory as fallback
   try {
     const t = await gtranslate(phrase, lang.apiCode);
     if (isOk(t, phrase)) return { ...lang, text: t };
@@ -72,12 +69,13 @@ class App {
     this.$themeBtn  = document.getElementById('themeToggle');
 
     // State
-    this.phrase      = '';
+    this.phrase       = '';
     this.translations = [];
-    this.isPaused    = false;
-    this.isLooping   = false;
-    this.isExporting = false;
-    this.toastTimer  = null;
+    this.isPaused     = false;
+    this.isLooping    = false;
+    this.isExporting  = false;
+    this.toastTimer   = null;
+    this._isPreview   = false; // true while auto-playing "love" preview
 
     // Stage
     this.stage            = new Stage(this.$canvas);
@@ -92,6 +90,7 @@ class App {
     this._initTheme();
     this._bindEvents();
     this._renderLangBadges();
+    this._autoPlayPreview();
   }
 
   // ── Theme ──────────────────────────────────────────────────────────────────
@@ -114,6 +113,20 @@ class App {
     if (!this.$themeBtn) return;
     this.$themeBtn.textContent = theme === 'dark' ? '☀' : '☽';
     this.$themeBtn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+
+  // ── Auto-preview "love" on load ────────────────────────────────────────────
+  async _autoPlayPreview() {
+    await document.fonts.ready;
+    this._isPreview = true;
+
+    try {
+      const preview = await this._fetchAll('love', /* quiet */ true);
+      if (preview.length >= 4 && this._isPreview) {
+        this.stage.setLoop(true);
+        this.stage.play(preview);
+      }
+    } catch { /* silently ignore — network may be unavailable */ }
   }
 
   // ── Events ─────────────────────────────────────────────────────────────────
@@ -145,8 +158,8 @@ class App {
       document.getElementById(id)?.classList.toggle('hidden', true);
     });
     document.getElementById(
-      state === 'idle' ? 'inputPanel' :
-      state === 'loading' ? 'loadingPanel' : 'playbackPanel'
+      state === 'idle'    ? 'inputPanel'    :
+      state === 'loading' ? 'loadingPanel'  : 'playbackPanel'
     )?.classList.remove('hidden');
   }
 
@@ -160,13 +173,17 @@ class App {
       return;
     }
 
+    // Cancel any running preview
+    this._isPreview = false;
+    this.stage.halt();
+
     this.phrase = phrase;
     this.$loadCount.textContent = '0';
     this.$loadItems.innerHTML   = '';
     this._show('loading');
 
     try {
-      this.translations = await this._fetchAll(phrase);
+      this.translations = await this._fetchAll(phrase, false);
 
       if (this.translations.length < 2) {
         this._toast('Couldn\'t reach the translation API. Check your connection.', 'error');
@@ -188,7 +205,7 @@ class App {
     }
   }
 
-  async _fetchAll(phrase) {
+  async _fetchAll(phrase, quiet = false) {
     // English always first
     const results = [{
       code: 'en', apiCode: 'en', name: 'English', native: 'English', dir: 'ltr', text: phrase,
@@ -201,12 +218,14 @@ class App {
       if (item) {
         results.push(item);
         done++;
-        this.$loadCount.textContent = done;
-        const span = document.createElement('span');
-        span.className   = 'load-item';
-        span.textContent = `${lang.native} · ${item.text}`;
-        this.$loadItems.appendChild(span);
-        this.$loadItems.scrollTop = this.$loadItems.scrollHeight;
+        if (!quiet) {
+          this.$loadCount.textContent = done;
+          const span = document.createElement('span');
+          span.className   = 'load-item';
+          span.textContent = `${lang.native} · ${item.text}`;
+          this.$loadItems.appendChild(span);
+          this.$loadItems.scrollTop = this.$loadItems.scrollHeight;
+        }
       }
     });
 
@@ -216,12 +235,12 @@ class App {
 
   // ── Callbacks ──────────────────────────────────────────────────────────────
   _onLang({ index, total }) {
-    this.$counter.textContent     = `${index + 1} / ${total}`;
-    this.$progFill.style.width    = `${((index + 1) / total) * 100}%`;
+    this.$counter.textContent  = `${index + 1} / ${total}`;
+    this.$progFill.style.width = `${((index + 1) / total) * 100}%`;
   }
 
   _onComplete() {
-    // Show replay affordance
+    if (this._isPreview) return; // preview loops — this path shouldn't trigger
     this._syncPP();
     this.$ppPlay.classList.remove('hidden');
     this.$ppPause.classList.add('hidden');
@@ -231,6 +250,7 @@ class App {
   // ── Controls ───────────────────────────────────────────────────────────────
   _back() {
     if (this._state() === 'idle') return;
+    this._isPreview = false;
     this.stage.halt();
     this._show('idle');
     this.$input.value = this.phrase;
@@ -242,7 +262,6 @@ class App {
     if (this.isPaused) {
       this.stage.pause();
     } else {
-      // If completed, restart
       if (!this.stage.isPlaying) {
         this.stage.play(this.translations);
       } else {
@@ -277,12 +296,11 @@ class App {
     this._toast('Recording…', 'info');
 
     try {
-      const stream   = this.$canvas.captureStream(30);
-      const rec      = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
-      const chunks   = [];
+      const stream = this.$canvas.captureStream(30);
+      const rec    = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+      const chunks = [];
       rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
 
-      // Re-play from start, no loop
       this.stage.setLoop(false);
       this.stage.play(this.translations);
       this.isPaused = false;
@@ -292,7 +310,7 @@ class App {
       await new Promise(resolve => {
         const prev = this.stage.onComplete;
         this.stage.onComplete = () => { this.stage.onComplete = prev; resolve(); };
-        setTimeout(resolve, 6500); // safety cap
+        setTimeout(resolve, 6500);
       });
       rec.stop();
       await new Promise(r => { rec.onstop = r; });
@@ -352,7 +370,7 @@ class App {
           setTimeout(frame, fMs);
         };
         frame();
-        setTimeout(resolve, 6500); // safety cap
+        setTimeout(resolve, 6500);
       });
 
       gif.render();
