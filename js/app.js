@@ -1,355 +1,395 @@
 'use strict';
 
+// ── Translation ───────────────────────────────────────────────────────────────
+
+async function gtranslate(text, langCode) {
+  // Unofficial Google Translate endpoint — no API key needed
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${langCode}&dt=t&q=${encodeURIComponent(text)}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  const t    = data?.[0]?.[0]?.[0];
+  return (t && typeof t === 'string') ? t.trim() : null;
+}
+
+async function mymemory(text, langCode) {
+  const url  = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${langCode}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (data.responseStatus === 200) {
+    const t = (data.responseData?.translatedText || '').trim();
+    if (!t.includes('MYMEMORY WARNING') && !t.includes('PLEASE SELECT')) return t;
+  }
+  return null;
+}
+
+function isOk(translation, source) {
+  if (!translation) return false;
+  const t = translation.trim();
+  if (!t) return false;
+  if (t.toLowerCase() === source.toLowerCase()) return false;
+  // Reject if it's basically a copy of the source with different punctuation
+  const stripped = t.replace(/[^a-z]/gi, '').toLowerCase();
+  const srcStripped = source.replace(/[^a-z]/gi, '').toLowerCase();
+  if (stripped === srcStripped) return false;
+  return true;
+}
+
+async function fetchOne(lang, phrase) {
+  // Google Translate first, MyMemory as fallback
+  try {
+    const t = await gtranslate(phrase, lang.apiCode);
+    if (isOk(t, phrase)) return { ...lang, text: t };
+  } catch { /* continue */ }
+
+  try {
+    const t = await mymemory(phrase, lang.apiCode);
+    if (isOk(t, phrase)) return { ...lang, text: t };
+  } catch { /* continue */ }
+
+  return null;
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
 class App {
   constructor() {
     // Elements
-    this.canvas         = document.getElementById('stage');
-    this.phraseInput    = document.getElementById('phraseInput');
-    this.animateBtn     = document.getElementById('animateBtn');
-    this.loadCount      = document.getElementById('loadCount');
-    this.loadingLangs   = document.getElementById('loadingLangs');
-    this.langCounter    = document.getElementById('langCounter');
-    this.progressFill   = document.getElementById('progressFill');
-    this.backBtn        = document.getElementById('backBtn');
-    this.playPauseBtn   = document.getElementById('playPauseBtn');
-    this.pauseIcon      = document.getElementById('pauseIcon');
-    this.playIcon       = document.getElementById('playIcon');
-    this.loopBtn        = document.getElementById('loopBtn');
-    this.exportVideoBtn = document.getElementById('exportVideoBtn');
-    this.exportGifBtn   = document.getElementById('exportGifBtn');
-    this.toastEl        = document.getElementById('toast');
+    this.$canvas    = document.getElementById('stage');
+    this.$input     = document.getElementById('phraseInput');
+    this.$animBtn   = document.getElementById('animateBtn');
+    this.$loadCount = document.getElementById('loadCount');
+    this.$loadItems = document.getElementById('loadingItems');
+    this.$counter   = document.getElementById('langCounter');
+    this.$progFill  = document.getElementById('progressFill');
+    this.$backBtn   = document.getElementById('backBtn');
+    this.$ppBtn     = document.getElementById('playPauseBtn');
+    this.$ppPause   = document.getElementById('pauseIcon');
+    this.$ppPlay    = document.getElementById('playIcon');
+    this.$loopBtn   = document.getElementById('loopBtn');
+    this.$vidBtn    = document.getElementById('exportVideoBtn');
+    this.$gifBtn    = document.getElementById('exportGifBtn');
+    this.$toast     = document.getElementById('toast');
+    this.$themeBtn  = document.getElementById('themeToggle');
 
     // State
     this.phrase      = '';
     this.translations = [];
     this.isPaused    = false;
-    this.isLooping   = true;
+    this.isLooping   = false;
     this.isExporting = false;
     this.toastTimer  = null;
 
     // Stage
-    this.stage = new Stage(this.canvas);
-    this.stage.onLangChange = info => this._onLangChange(info);
-    this.stage.onEnd        = ()   => this._onAnimEnd();
+    this.stage            = new Stage(this.$canvas);
+    this.stage.onLangChange = i => this._onLang(i);
+    this.stage.onComplete   = () => this._onComplete();
     this.stage.start();
 
-    window.addEventListener('resize', () => this.stage.resize());
+    // Resize observer
+    const ro = new ResizeObserver(() => this.stage.resize());
+    ro.observe(this.$canvas);
 
+    this._initTheme();
     this._bindEvents();
     this._renderLangBadges();
   }
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  _initTheme() {
+    const saved = localStorage.getItem('alTheme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    document.documentElement.dataset.theme = theme;
+    this._syncThemeIcon(theme);
+  }
+
+  _toggleTheme() {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('alTheme', next);
+    this._syncThemeIcon(next);
+  }
+
+  _syncThemeIcon(theme) {
+    if (!this.$themeBtn) return;
+    this.$themeBtn.textContent = theme === 'dark' ? '☀' : '☽';
+    this.$themeBtn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+  }
+
   // ── Events ─────────────────────────────────────────────────────────────────
   _bindEvents() {
-    this.animateBtn.addEventListener('click', () => this._handleAnimate());
-    this.phraseInput.addEventListener('keydown', e => { if (e.key === 'Enter') this._handleAnimate(); });
-
-    this.backBtn.addEventListener('click', () => this._handleBack());
-    this.playPauseBtn.addEventListener('click', () => this._togglePause());
-
-    this.loopBtn.addEventListener('click', () => {
-      this.isLooping = !this.isLooping;
-      this.stage.setLoop(this.isLooping);
-      this.loopBtn.classList.toggle('active', this.isLooping);
-    });
-
-    this.exportVideoBtn.addEventListener('click', () => this._exportVideo());
-    this.exportGifBtn.addEventListener('click',   () => this._exportGIF());
+    this.$animBtn.addEventListener('click',   () => this._run());
+    this.$input.addEventListener('keydown',   e  => { if (e.key === 'Enter') this._run(); });
+    this.$backBtn.addEventListener('click',   () => this._back());
+    this.$ppBtn.addEventListener('click',     () => this._togglePause());
+    this.$loopBtn.addEventListener('click',   () => this._toggleLoop());
+    this.$vidBtn.addEventListener('click',    () => this._exportVideo());
+    this.$gifBtn.addEventListener('click',    () => this._exportGIF());
+    this.$themeBtn?.addEventListener('click', () => this._toggleTheme());
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') this._handleBack();
-      if (e.key === ' ' && this._getState() === 'playing') {
-        e.preventDefault();
-        this._togglePause();
-      }
+      if (e.key === 'Escape')  this._back();
+      if (e.key === ' ' && this._state() === 'playing') { e.preventDefault(); this._togglePause(); }
     });
   }
 
   // ── State machine ──────────────────────────────────────────────────────────
-  _getState() {
+  _state() {
     if (!document.getElementById('loadingPanel').classList.contains('hidden')) return 'loading';
     if (!document.getElementById('playbackPanel').classList.contains('hidden')) return 'playing';
     return 'idle';
   }
 
-  _setState(state) {
-    const show = id => document.getElementById(id).classList.remove('hidden');
-    const hide = id => document.getElementById(id).classList.add('hidden');
-    ['inputPanel', 'loadingPanel', 'playbackPanel'].forEach(hide);
-    if (state === 'idle')    show('inputPanel');
-    if (state === 'loading') show('loadingPanel');
-    if (state === 'playing') show('playbackPanel');
+  _show(state) {
+    ['inputPanel','loadingPanel','playbackPanel'].forEach(id => {
+      document.getElementById(id)?.classList.toggle('hidden', true);
+    });
+    document.getElementById(
+      state === 'idle' ? 'inputPanel' :
+      state === 'loading' ? 'loadingPanel' : 'playbackPanel'
+    )?.classList.remove('hidden');
   }
 
   // ── Animate ────────────────────────────────────────────────────────────────
-  async _handleAnimate() {
-    const phrase = this.phraseInput.value.trim();
+  async _run() {
+    const phrase = this.$input.value.trim();
     if (!phrase) {
-      this.phraseInput.focus();
-      this.phraseInput.classList.add('shake');
-      setTimeout(() => this.phraseInput.classList.remove('shake'), 600);
+      this.$input.classList.add('shake');
+      this.$input.focus();
+      setTimeout(() => this.$input.classList.remove('shake'), 500);
       return;
     }
 
     this.phrase = phrase;
-    this.loadCount.textContent = '0';
-    this.loadingLangs.innerHTML = '';
-    this._setState('loading');
+    this.$loadCount.textContent = '0';
+    this.$loadItems.innerHTML   = '';
+    this._show('loading');
 
     try {
       this.translations = await this._fetchAll(phrase);
 
-      if (this.translations.length === 0) {
-        this._showToast('No translations received — check your connection.', 'error');
-        this._setState('idle');
+      if (this.translations.length < 2) {
+        this._toast('Couldn\'t reach the translation API. Check your connection.', 'error');
+        this._show('idle');
         return;
       }
 
-      this._setState('playing');
-      this.isPaused = false;
-      this._syncPlayPauseUI();
-
       await document.fonts.ready;
+      this._show('playing');
+      this.isPaused = false;
+      this._syncPP();
       this.stage.setLoop(this.isLooping);
       this.stage.play(this.translations);
+
     } catch (err) {
       console.error(err);
-      this._showToast('Something went wrong. Please try again.', 'error');
-      this._setState('idle');
+      this._toast('Something went wrong.', 'error');
+      this._show('idle');
     }
   }
 
   async _fetchAll(phrase) {
-    // English is always first
+    // English always first
     const results = [{
-      code: 'en', apiCode: 'en',
-      name: 'English', native: 'English',
-      dir: 'ltr', text: phrase,
+      code: 'en', apiCode: 'en', name: 'English', native: 'English', dir: 'ltr', text: phrase,
     }];
 
+    let done = 0;
+
     const promises = LANGUAGES.map(async lang => {
-      try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(phrase)}&langpair=en|${lang.apiCode}`;
-        const res  = await fetch(url);
-        const data = await res.json();
-
-        if (data.responseStatus === 200) {
-          const text = (data.responseData.translatedText || '').trim();
-          // Discard if identical to source or suspiciously short/long
-          if (text && text.toLowerCase() !== phrase.toLowerCase() && text.length <= phrase.length * 5) {
-            results.push({ ...lang, text });
-
-            // Update loading UI
-            const n = results.length - 1; // minus english
-            this.loadCount.textContent = n;
-            const span = document.createElement('span');
-            span.className = 'load-badge';
-            span.textContent = `${lang.native} · ${text}`;
-            this.loadingLangs.appendChild(span);
-            this.loadingLangs.scrollTop = this.loadingLangs.scrollHeight;
-          }
-        }
-      } catch { /* skip */ }
+      const item = await fetchOne(lang, phrase);
+      if (item) {
+        results.push(item);
+        done++;
+        this.$loadCount.textContent = done;
+        const span = document.createElement('span');
+        span.className   = 'load-item';
+        span.textContent = `${lang.native} · ${item.text}`;
+        this.$loadItems.appendChild(span);
+        this.$loadItems.scrollTop = this.$loadItems.scrollHeight;
+      }
     });
 
     await Promise.all(promises);
     return results;
   }
 
-  // ── Playback callbacks ─────────────────────────────────────────────────────
-  _onLangChange({ index, total, color }) {
-    this.langCounter.textContent = `${index + 1} / ${total}`;
-    this.progressFill.style.width      = `${((index + 1) / total) * 100}%`;
-    this.progressFill.style.background = color;
-    this.progressFill.style.boxShadow  = `0 0 12px ${color}`;
+  // ── Callbacks ──────────────────────────────────────────────────────────────
+  _onLang({ index, total }) {
+    this.$counter.textContent     = `${index + 1} / ${total}`;
+    this.$progFill.style.width    = `${((index + 1) / total) * 100}%`;
   }
 
-  _onAnimEnd() { /* no-op — loop handles re-start */ }
+  _onComplete() {
+    // Show replay affordance
+    this._syncPP();
+    this.$ppPlay.classList.remove('hidden');
+    this.$ppPause.classList.add('hidden');
+    this.isPaused = true;
+  }
 
-  _handleBack() {
-    if (this._getState() === 'idle') return;
+  // ── Controls ───────────────────────────────────────────────────────────────
+  _back() {
+    if (this._state() === 'idle') return;
     this.stage.halt();
-    this._setState('idle');
-    this.phraseInput.value = this.phrase;
-    setTimeout(() => this.phraseInput.focus(), 100);
+    this._show('idle');
+    this.$input.value = this.phrase;
+    setTimeout(() => this.$input.focus(), 80);
   }
 
   _togglePause() {
-    if (this._getState() !== 'playing') return;
     this.isPaused = !this.isPaused;
-    this.isPaused ? this.stage.pause() : this.stage.resume();
-    this._syncPlayPauseUI();
+    if (this.isPaused) {
+      this.stage.pause();
+    } else {
+      // If completed, restart
+      if (!this.stage.isPlaying) {
+        this.stage.play(this.translations);
+      } else {
+        this.stage.resume();
+      }
+    }
+    this._syncPP();
   }
 
-  _syncPlayPauseUI() {
-    this.pauseIcon.classList.toggle('hidden', this.isPaused);
-    this.playIcon.classList.toggle('hidden', !this.isPaused);
+  _syncPP() {
+    this.$ppPause.classList.toggle('hidden',  this.isPaused);
+    this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
   }
 
-  // ── Export — Video (WebM) ─────────────────────────────────────────────────
+  _toggleLoop() {
+    this.isLooping = !this.isLooping;
+    this.stage.setLoop(this.isLooping);
+    this.$loopBtn.classList.toggle('active', this.isLooping);
+    this.$loopBtn.setAttribute('aria-pressed', String(this.isLooping));
+  }
+
+  // ── Export — Video ─────────────────────────────────────────────────────────
   async _exportVideo() {
     if (this.isExporting) return;
-    if (!window.MediaRecorder) {
-      this._showToast('Your browser does not support video capture.', 'error');
-      return;
-    }
+    if (!window.MediaRecorder) { this._toast('MediaRecorder not supported.', 'error'); return; }
 
-    const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
       .find(m => MediaRecorder.isTypeSupported(m));
-    if (!mime) { this._showToast('Video codec not supported.', 'error'); return; }
+    if (!mime) { this._toast('No supported video codec.', 'error'); return; }
 
     this.isExporting = true;
-    this._showToast('Recording video — one full cycle…', 'info');
+    this._toast('Recording…', 'info');
 
     try {
-      const stream   = this.canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
+      const stream   = this.$canvas.captureStream(30);
+      const rec      = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
       const chunks   = [];
-      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
 
-      // Reset to start
+      // Re-play from start, no loop
+      this.stage.setLoop(false);
       this.stage.play(this.translations);
       this.isPaused = false;
-      this._syncPlayPauseUI();
+      this._syncPP();
 
-      // Record until one full cycle
-      const cycleDur = this.translations.length *
-        (this.stage.ENTER_DUR + this.stage.HOLD_DUR + this.stage.EXIT_DUR);
+      rec.start(80);
+      await new Promise(resolve => {
+        const prev = this.stage.onComplete;
+        this.stage.onComplete = () => { this.stage.onComplete = prev; resolve(); };
+        setTimeout(resolve, 6500); // safety cap
+      });
+      rec.stop();
+      await new Promise(r => { rec.onstop = r; });
 
-      recorder.start(100); // collect in 100ms chunks
-
-      await new Promise(r => setTimeout(r, cycleDur + 800));
-      recorder.stop();
-      await new Promise(r => { recorder.onstop = r; });
-
-      const blob = new Blob(chunks, { type: mime });
-      this._download(blob, `asku-lasku-${this._slug()}.webm`);
-      this._showToast('Video saved!', 'success');
-    } catch (err) {
-      console.error(err);
-      this._showToast('Video export failed.', 'error');
+      this._dl(new Blob(chunks, { type: mime }), `asku-lasku-${this._slug()}.webm`);
+      this._toast('Video saved!', 'success');
+    } catch (e) {
+      console.error(e);
+      this._toast('Video export failed.', 'error');
     } finally {
       this.isExporting = false;
+      this.stage.setLoop(this.isLooping);
     }
   }
 
-  // ── Export — GIF ──────────────────────────────────────────────────────────
+  // ── Export — GIF ───────────────────────────────────────────────────────────
   async _exportGIF() {
     if (this.isExporting) return;
-    if (typeof GIF === 'undefined') {
-      this._showToast('GIF library not available — try Video instead.', 'error');
-      return;
-    }
+    if (typeof GIF === 'undefined') { this._toast('GIF library not loaded — try Video.', 'error'); return; }
 
     this.isExporting = true;
-    this._showToast('Capturing frames…', 'info');
+    this._toast('Capturing frames…', 'info');
 
     try {
-      // Capture at half logical resolution for a manageable file
-      const W = Math.max(320, Math.floor(this.stage.W * 0.5));
-      const H = Math.max(180, Math.floor(this.stage.H * 0.5));
+      const scale = Math.min(1, 640 / this.stage.W);
+      const W     = Math.round(this.stage.W * scale);
+      const H     = Math.round(this.stage.H * scale);
 
-      const gif = new GIF({
-        workers:      2,
-        quality:      8,
-        width:        W,
-        height:       H,
-        workerScript: 'vendor/gif.worker.js',
-        dither:       false,
-      });
-
-      gif.on('progress', p => {
-        this._showToast(`Encoding GIF… ${Math.round(p * 100)}%`, 'info');
-      });
-
+      const gif = new GIF({ workers: 2, quality: 8, width: W, height: H, workerScript: 'vendor/gif.worker.js' });
+      gif.on('progress', p => this._toast(`Encoding GIF… ${Math.round(p * 100)}%`, 'info'));
       gif.on('finished', blob => {
-        this._download(blob, `asku-lasku-${this._slug()}.gif`);
-        this._showToast('GIF saved!', 'success');
+        this._dl(blob, `asku-lasku-${this._slug()}.gif`);
+        this._toast('GIF saved!', 'success');
         this.isExporting = false;
-        // resume normal looping play
         this.stage.setLoop(this.isLooping);
         this.stage.play(this.translations);
       });
 
-      // Temp canvas for downscaling
-      const tmp    = document.createElement('canvas');
-      tmp.width    = W; tmp.height = H;
-      const tmpCtx = tmp.getContext('2d');
+      const tmp = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      const tc  = tmp.getContext('2d');
+      const FPS = 15, fMs = 1000 / FPS;
 
-      const FPS          = 15;
-      const frameMs      = 1000 / FPS;
-      const cycleDur     = this.translations.length *
-        (this.stage.ENTER_DUR + this.stage.HOLD_DUR + this.stage.EXIT_DUR);
-
-      // Play from beginning (no loop so we stop cleanly)
       this.stage.setLoop(false);
       this.stage.play(this.translations);
       this.isPaused = false;
-      this._syncPlayPauseUI();
+      this._syncPP();
 
-      let captured = false;
-      const originalOnEnd = this.stage.onEnd;
-      this.stage.onEnd = () => {
-        captured = true;
-        this.stage.onEnd = originalOnEnd;
-      };
+      let done = false;
+      const prev = this.stage.onComplete;
+      this.stage.onComplete = () => { this.stage.onComplete = prev; done = true; };
 
-      // Frame capture loop
-      const startAt = performance.now();
       await new Promise(resolve => {
-        const captureFrame = () => {
-          if (captured || performance.now() - startAt > cycleDur + 2000) {
-            resolve(); return;
-          }
-          // Draw main canvas → temp canvas (downscaled)
-          tmpCtx.drawImage(
-            this.canvas,
-            0, 0, this.canvas.width, this.canvas.height,
-            0, 0, W, H
-          );
-          gif.addFrame(tmpCtx, { delay: Math.round(frameMs), copy: true });
-          setTimeout(captureFrame, frameMs);
+        const frame = () => {
+          if (done) { resolve(); return; }
+          tc.drawImage(this.$canvas, 0, 0, this.$canvas.width, this.$canvas.height, 0, 0, W, H);
+          gif.addFrame(tc, { delay: Math.round(fMs), copy: true });
+          setTimeout(frame, fMs);
         };
-        captureFrame();
+        frame();
+        setTimeout(resolve, 6500); // safety cap
       });
 
       gif.render();
-    } catch (err) {
-      console.error(err);
-      this._showToast('GIF export failed.', 'error');
+    } catch (e) {
+      console.error(e);
+      this._toast('GIF export failed.', 'error');
       this.isExporting = false;
       this.stage.setLoop(this.isLooping);
     }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  _download(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a   = Object.assign(document.createElement('a'), { href: url, download: filename });
+  _dl(blob, name) {
+    const a = Object.assign(document.createElement('a'), {
+      href: URL.createObjectURL(blob), download: name
+    });
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
   }
 
   _slug() {
-    return this.phrase.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30);
+    return this.phrase.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 28) || 'phrase';
   }
 
-  _showToast(msg, type = 'info') {
+  _toast(msg, type = 'info') {
     clearTimeout(this.toastTimer);
-    this.toastEl.textContent = msg;
-    this.toastEl.className   = `toast ${type}`;
-    this.toastEl.classList.remove('hidden');
-    if (type !== 'info') {
-      this.toastTimer = setTimeout(() => this.toastEl.classList.add('hidden'), 4500);
-    }
+    Object.assign(this.$toast, { textContent: msg, className: `toast ${type}` });
+    this.$toast.classList.remove('hidden');
+    if (type !== 'info') this.toastTimer = setTimeout(() => this.$toast.classList.add('hidden'), 4000);
   }
 
   _renderLangBadges() {
-    const container = document.getElementById('langBadges');
-    const shown     = LANGUAGES.slice(0, 14);
-    container.innerHTML =
-      shown.map(l => `<span class="lang-badge">${l.native}</span>`).join('') +
-      `<span class="lang-badge dim">+${LANGUAGES.length - shown.length} more</span>`;
+    const el   = document.getElementById('langBadges');
+    const show = LANGUAGES.slice(0, 12);
+    el.innerHTML =
+      show.map(l => `<span class="badge">${l.native}</span>`).join('') +
+      `<span class="badge dim">+${LANGUAGES.length - show.length} more</span>`;
   }
 }
 
