@@ -37,20 +37,33 @@ async function fetchOne(lang, phrase) {
     const t = await gtranslate(phrase, lang.apiCode);
     if (isOk(t, phrase)) return { ...lang, text: t };
   } catch { /* continue */ }
-
   try {
     const t = await mymemory(phrase, lang.apiCode);
     if (isOk(t, phrase)) return { ...lang, text: t };
   } catch { /* continue */ }
-
   return null;
+}
+
+// ── Speed helpers ─────────────────────────────────────────────────────────────
+
+function speedToMs(v) {
+  // speed 1 → 14 000ms (very slow), speed 5 → ~8 600ms, speed 10 → 3 500ms
+  return Math.round(14000 - (v - 1) * 1167);
+}
+
+function speedLabel(v) {
+  v = +v;
+  if (v <= 2)  return 'Slow';
+  if (v <= 4)  return 'Steady';
+  if (v <= 6)  return 'Medium';
+  if (v <= 8)  return 'Brisk';
+  return 'Fast';
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
 class App {
   constructor() {
-    // Elements
     this.$canvas    = document.getElementById('stage');
     this.$input     = document.getElementById('phraseInput');
     this.$animBtn   = document.getElementById('animateBtn');
@@ -67,23 +80,24 @@ class App {
     this.$gifBtn    = document.getElementById('exportGifBtn');
     this.$toast     = document.getElementById('toast');
     this.$themeBtn  = document.getElementById('themeToggle');
+    this.$speedSlider = document.getElementById('speedSlider');
+    this.$speedVal    = document.getElementById('speedVal');
+    this.$caption     = document.getElementById('boardCaption');
 
-    // State
     this.phrase       = '';
     this.translations = [];
     this.isPaused     = false;
     this.isLooping    = false;
     this.isExporting  = false;
     this.toastTimer   = null;
-    this._isPreview   = false; // true while auto-playing "love" preview
+    this._isPreview   = false;
+    this._previewData = null; // cached preview translations
 
-    // Stage
     this.stage            = new Stage(this.$canvas);
     this.stage.onLangChange = i => this._onLang(i);
     this.stage.onComplete   = () => this._onComplete();
     this.stage.start();
 
-    // Resize observer
     const ro = new ResizeObserver(() => this.stage.resize());
     ro.observe(this.$canvas);
 
@@ -96,8 +110,7 @@ class App {
   // ── Theme ──────────────────────────────────────────────────────────────────
   _initTheme() {
     const saved = localStorage.getItem('alTheme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light');
+    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.dataset.theme = theme;
     this._syncThemeIcon(theme);
   }
@@ -115,18 +128,36 @@ class App {
     this.$themeBtn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   }
 
+  // ── Speed ──────────────────────────────────────────────────────────────────
+  _getSpeed()  { return parseInt(this.$speedSlider?.value || '5', 10); }
+  _getTotalMs(){ return speedToMs(this._getSpeed()); }
+
+  _syncSpeedLabel() {
+    if (this.$speedVal) this.$speedVal.textContent = speedLabel(this._getSpeed());
+  }
+
   // ── Auto-preview "love" on load ────────────────────────────────────────────
   async _autoPlayPreview() {
     await document.fonts.ready;
     this._isPreview = true;
-
     try {
-      const preview = await this._fetchAll('love', /* quiet */ true);
-      if (preview.length >= 4 && this._isPreview) {
+      const data = await this._fetchAll('love', true);
+      if (data.length >= 4 && this._isPreview) {
+        this._previewData = data;
+        this.$caption?.classList.remove('hidden');
         this.stage.setLoop(true);
-        this.stage.play(preview);
+        // Preview always plays at a comfortable default pace regardless of slider
+        this.stage.play(data, 9000);
       }
-    } catch { /* silently ignore — network may be unavailable */ }
+    } catch { /* network unavailable — silent */ }
+  }
+
+  _restartPreview() {
+    if (!this._previewData || !this._previewData.length) return;
+    this._isPreview = true;
+    this.$caption?.classList.remove('hidden');
+    this.stage.setLoop(true);
+    this.stage.play(this._previewData, 9000);
   }
 
   // ── Events ─────────────────────────────────────────────────────────────────
@@ -140,8 +171,10 @@ class App {
     this.$gifBtn.addEventListener('click',    () => this._exportGIF());
     this.$themeBtn?.addEventListener('click', () => this._toggleTheme());
 
+    this.$speedSlider?.addEventListener('input', () => this._syncSpeedLabel());
+
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape')  this._back();
+      if (e.key === 'Escape') this._back();
       if (e.key === ' ' && this._state() === 'playing') { e.preventDefault(); this._togglePause(); }
     });
   }
@@ -154,12 +187,12 @@ class App {
   }
 
   _show(state) {
-    ['inputPanel','loadingPanel','playbackPanel'].forEach(id => {
-      document.getElementById(id)?.classList.toggle('hidden', true);
-    });
+    ['inputPanel','loadingPanel','playbackPanel'].forEach(id =>
+      document.getElementById(id)?.classList.toggle('hidden', true)
+    );
     document.getElementById(
-      state === 'idle'    ? 'inputPanel'    :
-      state === 'loading' ? 'loadingPanel'  : 'playbackPanel'
+      state === 'idle'    ? 'inputPanel'   :
+      state === 'loading' ? 'loadingPanel' : 'playbackPanel'
     )?.classList.remove('hidden');
   }
 
@@ -173,8 +206,8 @@ class App {
       return;
     }
 
-    // Cancel any running preview
     this._isPreview = false;
+    this.$caption?.classList.add('hidden');
     this.stage.halt();
 
     this.phrase = phrase;
@@ -196,7 +229,7 @@ class App {
       this.isPaused = false;
       this._syncPP();
       this.stage.setLoop(this.isLooping);
-      this.stage.play(this.translations);
+      this.stage.play(this.translations, this._getTotalMs());
 
     } catch (err) {
       console.error(err);
@@ -205,15 +238,13 @@ class App {
     }
   }
 
-  async _fetchAll(phrase, quiet = false) {
-    // English always first
+  async _fetchAll(phrase, quiet) {
     const results = [{
       code: 'en', apiCode: 'en', name: 'English', native: 'English', dir: 'ltr', text: phrase,
     }];
-
     let done = 0;
 
-    const promises = LANGUAGES.map(async lang => {
+    await Promise.all(LANGUAGES.map(async lang => {
       const item = await fetchOne(lang, phrase);
       if (item) {
         results.push(item);
@@ -227,9 +258,8 @@ class App {
           this.$loadItems.scrollTop = this.$loadItems.scrollHeight;
         }
       }
-    });
+    }));
 
-    await Promise.all(promises);
     return results;
   }
 
@@ -240,7 +270,7 @@ class App {
   }
 
   _onComplete() {
-    if (this._isPreview) return; // preview loops — this path shouldn't trigger
+    if (this._isPreview) return;
     this._syncPP();
     this.$ppPlay.classList.remove('hidden');
     this.$ppPause.classList.add('hidden');
@@ -254,7 +284,10 @@ class App {
     this.stage.halt();
     this._show('idle');
     this.$input.value = this.phrase;
-    setTimeout(() => this.$input.focus(), 80);
+    setTimeout(() => {
+      this.$input.focus();
+      this._restartPreview();
+    }, 80);
   }
 
   _togglePause() {
@@ -263,7 +296,7 @@ class App {
       this.stage.pause();
     } else {
       if (!this.stage.isPlaying) {
-        this.stage.play(this.translations);
+        this.stage.play(this.translations, this._getTotalMs());
       } else {
         this.stage.resume();
       }
@@ -301,8 +334,9 @@ class App {
       const chunks = [];
       rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
 
+      const ms = this._getTotalMs();
       this.stage.setLoop(false);
-      this.stage.play(this.translations);
+      this.stage.play(this.translations, ms);
       this.isPaused = false;
       this._syncPP();
 
@@ -310,7 +344,7 @@ class App {
       await new Promise(resolve => {
         const prev = this.stage.onComplete;
         this.stage.onComplete = () => { this.stage.onComplete = prev; resolve(); };
-        setTimeout(resolve, 6500);
+        setTimeout(resolve, ms + 1500);
       });
       rec.stop();
       await new Promise(r => { rec.onstop = r; });
@@ -335,7 +369,7 @@ class App {
     this._toast('Capturing frames…', 'info');
 
     try {
-      const scale = Math.min(1, 640 / this.stage.W);
+      const scale = Math.min(1, 480 / this.stage.W);
       const W     = Math.round(this.stage.W * scale);
       const H     = Math.round(this.stage.H * scale);
 
@@ -346,15 +380,16 @@ class App {
         this._toast('GIF saved!', 'success');
         this.isExporting = false;
         this.stage.setLoop(this.isLooping);
-        this.stage.play(this.translations);
+        this.stage.play(this.translations, this._getTotalMs());
       });
 
       const tmp = Object.assign(document.createElement('canvas'), { width: W, height: H });
       const tc  = tmp.getContext('2d');
       const FPS = 15, fMs = 1000 / FPS;
 
+      const ms = this._getTotalMs();
       this.stage.setLoop(false);
-      this.stage.play(this.translations);
+      this.stage.play(this.translations, ms);
       this.isPaused = false;
       this._syncPP();
 
@@ -370,7 +405,7 @@ class App {
           setTimeout(frame, fMs);
         };
         frame();
-        setTimeout(resolve, 6500);
+        setTimeout(resolve, ms + 1500);
       });
 
       gif.render();
@@ -404,7 +439,7 @@ class App {
 
   _renderLangBadges() {
     const el   = document.getElementById('langBadges');
-    const show = LANGUAGES.slice(0, 12);
+    const show = LANGUAGES.slice(0, 10);
     el.innerHTML =
       show.map(l => `<span class="badge">${l.native}</span>`).join('') +
       `<span class="badge dim">+${LANGUAGES.length - show.length} more</span>`;
