@@ -47,8 +47,8 @@ async function fetchOne(lang, phrase) {
 // ── Speed helpers ─────────────────────────────────────────────────────────────
 
 function speedToMs(v) {
-  // speed 1 → 14 000ms (very slow), speed 5 → ~8 600ms, speed 10 → 3 500ms
-  return Math.round(14000 - (v - 1) * 1167);
+  // speed 1 (slow) → 14 000ms; speed 5 (medium) → ~8 600ms; speed 10 (fast) → 3 500ms
+  return Math.round(14000 - (+v - 1) * 1167);
 }
 
 function speedLabel(v) {
@@ -64,26 +64,29 @@ function speedLabel(v) {
 
 class App {
   constructor() {
-    this.$canvas    = document.getElementById('stage');
-    this.$input     = document.getElementById('phraseInput');
-    this.$animBtn   = document.getElementById('animateBtn');
-    this.$loadCount = document.getElementById('loadCount');
-    this.$loadItems = document.getElementById('loadingItems');
-    this.$counter   = document.getElementById('langCounter');
-    this.$progFill  = document.getElementById('progressFill');
-    this.$backBtn   = document.getElementById('backBtn');
-    this.$ppBtn     = document.getElementById('playPauseBtn');
-    this.$ppPause   = document.getElementById('pauseIcon');
-    this.$ppPlay    = document.getElementById('playIcon');
-    this.$loopBtn   = document.getElementById('loopBtn');
-    this.$vidBtn    = document.getElementById('exportVideoBtn');
-    this.$gifBtn    = document.getElementById('exportGifBtn');
-    this.$toast     = document.getElementById('toast');
-    this.$themeBtn  = document.getElementById('themeToggle');
+    // DOM refs
+    this.$canvas      = document.getElementById('stage');
+    this.$input       = document.getElementById('phraseInput');
+    this.$animBtn     = document.getElementById('animateBtn');
+    this.$loadCount   = document.getElementById('loadCount');
+    this.$loadItems   = document.getElementById('loadingItems');
+    this.$counter     = document.getElementById('langCounter');
+    this.$progFill    = document.getElementById('progressFill');
+    this.$backBtn     = document.getElementById('backBtn');
+    this.$ppBtn       = document.getElementById('playPauseBtn');
+    this.$ppPause     = document.getElementById('pauseIcon');
+    this.$ppPlay      = document.getElementById('playIcon');
+    this.$loopBtn     = document.getElementById('loopBtn');
+    this.$vidBtn      = document.getElementById('exportVideoBtn');
+    this.$gifBtn      = document.getElementById('exportGifBtn');
+    this.$toast       = document.getElementById('toast');
+    this.$themeBtn    = document.getElementById('themeToggle');
     this.$speedSlider = document.getElementById('speedSlider');
     this.$speedVal    = document.getElementById('speedVal');
     this.$caption     = document.getElementById('boardCaption');
+    this.$modeBtns    = document.querySelectorAll('.mode-btn');
 
+    // State
     this.phrase       = '';
     this.translations = [];
     this.isPaused     = false;
@@ -91,19 +94,22 @@ class App {
     this.isExporting  = false;
     this.toastTimer   = null;
     this._isPreview   = false;
-    this._previewData = null; // cached preview translations
+    this._previewData = null;
 
+    // Stage engine
     this.stage            = new Stage(this.$canvas);
     this.stage.onLangChange = i => this._onLang(i);
     this.stage.onComplete   = () => this._onComplete();
     this.stage.start();
 
+    // Resize observer
     const ro = new ResizeObserver(() => this.stage.resize());
     ro.observe(this.$canvas);
 
     this._initTheme();
     this._bindEvents();
     this._renderLangBadges();
+    this._syncSpeedLabel(); // initial label sync
     this._autoPlayPreview();
   }
 
@@ -125,12 +131,12 @@ class App {
   _syncThemeIcon(theme) {
     if (!this.$themeBtn) return;
     this.$themeBtn.textContent = theme === 'dark' ? '☀' : '☽';
-    this.$themeBtn.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    this.$themeBtn.title       = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   }
 
   // ── Speed ──────────────────────────────────────────────────────────────────
-  _getSpeed()  { return parseInt(this.$speedSlider?.value || '5', 10); }
-  _getTotalMs(){ return speedToMs(this._getSpeed()); }
+  _getSpeed()   { return parseInt(this.$speedSlider?.value || '5', 10); }
+  _getTotalMs() { return speedToMs(this._getSpeed()); }
 
   _syncSpeedLabel() {
     if (this.$speedVal) this.$speedVal.textContent = speedLabel(this._getSpeed());
@@ -146,14 +152,13 @@ class App {
         this._previewData = data;
         this.$caption?.classList.remove('hidden');
         this.stage.setLoop(true);
-        // Preview always plays at a comfortable default pace regardless of slider
-        this.stage.play(data, 9000);
+        this.stage.play(data, 9000); // preview always at a comfortable fixed pace
       }
     } catch { /* network unavailable — silent */ }
   }
 
   _restartPreview() {
-    if (!this._previewData || !this._previewData.length) return;
+    if (!this._previewData?.length) return;
     this._isPreview = true;
     this.$caption?.classList.remove('hidden');
     this.stage.setLoop(true);
@@ -171,7 +176,26 @@ class App {
     this.$gifBtn.addEventListener('click',    () => this._exportGIF());
     this.$themeBtn?.addEventListener('click', () => this._toggleTheme());
 
-    this.$speedSlider?.addEventListener('input', () => this._syncSpeedLabel());
+    // Speed slider: real-time label update + live pace change during playback
+    this.$speedSlider?.addEventListener('input', () => {
+      this._syncSpeedLabel();
+      // Only update live if playing user's own phrase (not preview)
+      if (this._state() === 'playing' && !this._isPreview) {
+        this.stage.setSpeed(this._getTotalMs());
+      }
+    });
+
+    // Mode toggle (Morph / Flip)
+    this.$modeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.mode;
+        this.$modeBtns.forEach(b => {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-pressed', String(b === btn));
+        });
+        this.stage.setMode(mode);
+      });
+    });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') this._back();
@@ -326,15 +350,17 @@ class App {
     if (!mime) { this._toast('No supported video codec.', 'error'); return; }
 
     this.isExporting = true;
+    // In morph mode, canvas-only rendering is used for export (DOM overlay isn't capturable)
+    this.stage.exportMode = true;
     this._toast('Recording…', 'info');
 
     try {
+      const ms     = this._getTotalMs();
       const stream = this.$canvas.captureStream(30);
       const rec    = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
       const chunks = [];
       rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
 
-      const ms = this._getTotalMs();
       this.stage.setLoop(false);
       this.stage.play(this.translations, ms);
       this.isPaused = false;
@@ -356,6 +382,7 @@ class App {
       this._toast('Video export failed.', 'error');
     } finally {
       this.isExporting = false;
+      this.stage.exportMode = false;
       this.stage.setLoop(this.isLooping);
     }
   }
@@ -366,6 +393,7 @@ class App {
     if (typeof GIF === 'undefined') { this._toast('GIF library not loaded — try Video.', 'error'); return; }
 
     this.isExporting = true;
+    this.stage.exportMode = true;
     this._toast('Capturing frames…', 'info');
 
     try {
@@ -379,6 +407,7 @@ class App {
         this._dl(blob, `asku-lasku-${this._slug()}.gif`);
         this._toast('GIF saved!', 'success');
         this.isExporting = false;
+        this.stage.exportMode = false;
         this.stage.setLoop(this.isLooping);
         this.stage.play(this.translations, this._getTotalMs());
       });
@@ -386,8 +415,8 @@ class App {
       const tmp = Object.assign(document.createElement('canvas'), { width: W, height: H });
       const tc  = tmp.getContext('2d');
       const FPS = 15, fMs = 1000 / FPS;
+      const ms  = this._getTotalMs();
 
-      const ms = this._getTotalMs();
       this.stage.setLoop(false);
       this.stage.play(this.translations, ms);
       this.isPaused = false;
@@ -413,6 +442,7 @@ class App {
       console.error(e);
       this._toast('GIF export failed.', 'error');
       this.isExporting = false;
+      this.stage.exportMode = false;
       this.stage.setLoop(this.isLooping);
     }
   }
