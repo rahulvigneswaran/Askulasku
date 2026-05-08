@@ -62,6 +62,7 @@ class Stage {
     this.onComplete   = null;
 
     this.resize();
+    this._renderDPR = window.devicePixelRatio || 1;
     this._syncOverlay(false);
   }
 
@@ -74,6 +75,7 @@ class Stage {
   // ── Setup ──────────────────────────────────────────────────────────────────
   resize() {
     const dpr  = window.devicePixelRatio || 1;
+    this._renderDPR = dpr;
     const rect = this.canvas.getBoundingClientRect();
     this.W = Math.max(rect.width,  1);
     this.H = Math.max(rect.height, 1);
@@ -82,9 +84,11 @@ class Stage {
     this.canvas.style.width  = this.W + 'px';
     this.canvas.style.height = this.H + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Re-apply font size to morph elements after resize
     this._syncMorphTextSize();
   }
+
+  // Scale factor relative to 640 px reference height — used to scale hardcoded px values
+  _scale() { return this.H / 640; }
 
   // ── Text fitting ───────────────────────────────────────────────────────────
   _wrapWords(text, maxW, size) {
@@ -112,8 +116,8 @@ class Stage {
     const maxW    = this.W * 0.74;
     const maxH    = flipH * 0.68;
     const maxLines = 3;
-    const minSize  = 18;
-    let size = Math.min(96, Math.floor(flipH * 0.27));
+    const minSize  = Math.round(18 * this._scale());
+    let size = Math.floor(flipH * 0.27); // no hardcoded cap — scales with canvas height
 
     while (size >= minSize) {
       this.ctx.font = `800 ${size}px ${FONT}`;
@@ -325,7 +329,7 @@ class Stage {
     const mainCtx = this.ctx;
     const foldY   = this._foldY();
     const flipH   = this._flipH();
-    const dpr     = window.devicePixelRatio || 1;
+    const dpr     = this._renderDPR || 1;
     const pw      = this.canvas.width;
     const ph      = Math.round(flipH * dpr);
 
@@ -532,7 +536,8 @@ class Stage {
     const ctx   = this.ctx;
     const cx    = this.W / 2;
     const baseY = this._labelY() + (slideDown || 0);
-    const nSize = Math.max(12, Math.min(19, this.H * 0.030));
+    const sc    = this._scale();
+    const nSize = Math.round(Math.min(sc * 22, this.H * 0.030));
 
     ctx.save();
     ctx.globalAlpha  = opacity;
@@ -546,10 +551,10 @@ class Stage {
     ctx.fillText(native, cx, baseY);
 
     // English name — small, dim, spaced caps
-    ctx.font         = `500 10px 'Inter', sans-serif`;
-    ctx.fillStyle    = 'rgba(255,255,255,0.26)';
+    ctx.font          = `500 ${Math.round(sc * 10)}px 'Inter', sans-serif`;
+    ctx.fillStyle     = 'rgba(255,255,255,0.26)';
     ctx.letterSpacing = '0.13em';
-    ctx.fillText(lang.toUpperCase(), cx, baseY + nSize + 12);
+    ctx.fillText(lang.toUpperCase(), cx, baseY + nSize + Math.round(sc * 12));
 
     ctx.restore();
   }
@@ -561,7 +566,7 @@ class Stage {
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font         = `400 13px 'Inter', sans-serif`;
+    ctx.font         = `400 ${Math.round(this._scale() * 13)}px 'Inter', sans-serif`;
     ctx.fillStyle    = 'rgba(255,255,255,0.13)';
     ctx.fillText('Your phrase will appear here', cx, cy);
     ctx.restore();
@@ -588,6 +593,40 @@ class Stage {
     btmFade.addColorStop(1, 'rgba(0,0,0,0.32)');
     ctx.fillStyle = btmFade;
     ctx.fillRect(0, H * 0.93, W, H * 0.07);
+  }
+
+  // ── High-resolution export frame rendering ────────────────────────────────
+  // Temporarily redirects rendering to an OffscreenCanvas at a larger resolution,
+  // scaling font sizes proportionally so the output is pixel-perfect at the
+  // target dimensions (not just an upscale of the visible canvas).
+  _drawExportFrame(exportCanvas, W, H) {
+    const scale = W / this.W;
+
+    const saved = {
+      ctx: this.ctx, W: this.W, H: this.H, canvas: this.canvas,
+      curSize: this.curSize, nxtSize: this.nxtSize, renderDPR: this._renderDPR,
+    };
+
+    const exportCtx = exportCanvas.getContext('2d');
+    exportCtx.setTransform(1, 0, 0, 1, 0, 0); // export canvas is 1:1 physical pixels
+
+    this.ctx        = exportCtx;
+    this.W          = W;
+    this.H          = H;
+    this.canvas     = exportCanvas;
+    this.curSize    = Math.round(saved.curSize * scale);
+    this.nxtSize    = Math.round(saved.nxtSize * scale);
+    this._renderDPR = 1; // no DPR scaling on the export canvas
+
+    this._draw();
+
+    this.ctx        = saved.ctx;
+    this.W          = saved.W;
+    this.H          = saved.H;
+    this.canvas     = saved.canvas;
+    this.curSize    = saved.curSize;
+    this.nxtSize    = saved.nxtSize;
+    this._renderDPR = saved.renderDPR;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────

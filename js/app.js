@@ -367,12 +367,15 @@ class App {
 
     let fallbackToWebM = false;
     try {
-      // Use physical canvas pixels; H.264 requires even dimensions
-      const W = Math.round(this.$canvas.width  / 2) * 2;
-      const H = Math.round(this.$canvas.height / 2) * 2;
-      const FPS = 30;
+      // Instagram Reels/Stories spec: 1080×1920, 60fps, H.264 High Profile
+      const W   = 1080, H = 1920;
+      const FPS = 60;
       const ms  = this._getTotalMs();
       const frameMs = 1000 / FPS;
+
+      // Offscreen canvas at the export resolution — rendered independently of
+      // the visible canvas so the quality isn't limited by screen DPR or size
+      const exportCanvas = new OffscreenCanvas(W, H);
 
       const target = new Mp4Muxer.ArrayBufferTarget();
       const muxer  = new Mp4Muxer.Muxer({
@@ -387,9 +390,10 @@ class App {
         error:  e => { encodeError = e; },
       });
 
-      const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 6_000_000, framerate: FPS };
+      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080×1920@60fps
+      const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 15_000_000, framerate: FPS };
       const support = await VideoEncoder.isConfigSupported(cfg);
-      if (!support.supported) throw new Error('H.264 codec not supported');
+      if (!support.supported) throw new Error('H.264 High Profile not supported');
       encoder.configure(cfg);
 
       this.stage.setLoop(false);
@@ -407,10 +411,12 @@ class App {
           if (encodeError || done || frameIndex * frameMs > ms + 300) { resolve(); return; }
           const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
           try {
-            const vf = new VideoFrame(this.$canvas, { timestamp });
+            // Render the current animation frame at full 1080×1920 — not an upscale
+            this.stage._drawExportFrame(exportCanvas, W, H);
+            const vf = new VideoFrame(exportCanvas, { timestamp });
             encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });
             vf.close();
-          } catch { /* canvas not ready yet */ }
+          } catch { /* skip if state isn't ready yet */ }
           frameIndex++;
           setTimeout(captureFrame, frameMs);
         };
