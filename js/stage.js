@@ -334,7 +334,7 @@ class Stage {
     const ph      = Math.round(flipH * dpr);
     const sc      = this._scale();
 
-    // Blur values scaled by canvas height so export (3x screen size) looks identical
+    // Blur values scaled by canvas height so export (3× screen size) looks identical
     const blur1  = Math.min(8 / Math.max(1 - p, 0.001) - 8, 80) * sc;
     const alpha1 = Math.pow(1 - p, 0.4);
     const blur2  = Math.min(8 / Math.max(p,     0.001) - 8, 80) * sc;
