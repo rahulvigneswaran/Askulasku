@@ -361,29 +361,36 @@ class App {
 
       this.stage.setLoop(false);
       this.stage.play(this.translations, ms);
+      // Freeze RAF-driven updates so the animation clock is owned entirely by
+      // the capture loop. Each captured frame advances simulation by exactly
+      // frameMs — independent of screen refresh rate or setTimeout jitter.
+      this.stage.pause();
       this.isPaused = false;
       this._syncPP();
 
       let done = false;
       let frameIndex = 0;
+      const maxFrames = Math.ceil(ms / frameMs) + FPS * 2; // hard safety cap
       const prev = this.stage.onComplete;
       this.stage.onComplete = () => { done = true; this.stage.onComplete = prev; };
 
       await new Promise(resolve => {
         const captureFrame = () => {
-          if (encodeError || done || frameIndex * frameMs > ms + 300) { resolve(); return; }
+          if (encodeError || done || frameIndex >= maxFrames) { resolve(); return; }
           const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
           try {
+            // Capture current state, then step simulation — so frame 0 shows
+            // the animation at t=0 and frame N shows t = N * frameMs.
             this.stage._drawExportFrame(exportCanvas, W, H);
             const vf = new VideoFrame(exportCanvas, { timestamp });
             encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });
             vf.close();
-          } catch { /* skip if state isn't ready yet */ }
+            this.stage.stepExport(frameMs);
+          } catch (e) { console.error('frame export error', e); }
           frameIndex++;
-          setTimeout(captureFrame, frameMs);
+          setTimeout(captureFrame, 0); // yield to event loop; no real-time wait
         };
         captureFrame();
-        setTimeout(resolve, ms + 2000);
       });
 
       if (encodeError) throw encodeError;
@@ -399,6 +406,7 @@ class App {
     } finally {
       this.isExporting = false;
       this.stage.exportMode = false;
+      this.stage.resume(); // undo the pause() set at export start
       this.stage.setLoop(this.isLooping);
     }
 

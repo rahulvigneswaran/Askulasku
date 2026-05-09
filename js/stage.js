@@ -692,6 +692,15 @@ class Stage {
   pause()  { this.isPaused = true;  }
   resume() { this.isPaused = false; }
 
+  // Advance animation by exactly dt ms, bypassing isPaused — for frame-accurate export.
+  // The RAF loop is paused during export so the simulation doesn't advance on its own.
+  stepExport(dt) {
+    const was = this.isPaused;
+    this.isPaused = false;
+    this._update(dt);
+    this.isPaused = was;
+  }
+
   halt() {
     this.isPlaying    = false;
     this.isPaused     = false;
