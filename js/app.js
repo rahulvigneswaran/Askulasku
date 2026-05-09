@@ -332,11 +332,12 @@ class App {
 
     let fallbackToWebM = false;
     try {
-      // Instagram Reels/Stories spec: 1080x1920, 60fps, H.264 High Profile
+      // Instagram Reels/Stories spec: 1080x1920, 30fps, H.264 High Profile
       const W   = 1080, H = 1920;
-      const FPS = 60;
+      const FPS = 30;
       const ms  = this._getTotalMs();
-      const frameMs = 1000 / FPS;
+      const frameMs     = 1000 / FPS;               // 33.33ms per frame
+      const frameDuration = Math.round(1_000_000 / FPS); // µs per frame for VideoFrame
 
       const exportCanvas = new OffscreenCanvas(W, H);
 
@@ -353,8 +354,13 @@ class App {
         error:  e => { encodeError = e; },
       });
 
-      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080x1920@60fps
-      const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 15_000_000, framerate: FPS };
+      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080x1920@30fps
+      // latencyMode:'realtime' disables B-frames so PTS == DTS — prevents mp4-muxer timing drift
+      const cfg = {
+        codec: 'avc1.640033', width: W, height: H,
+        bitrate: 8_000_000, framerate: FPS,
+        latencyMode: 'realtime',
+      };
       const support = await VideoEncoder.isConfigSupported(cfg);
       if (!support.supported) throw new Error('H.264 High Profile not supported');
       encoder.configure(cfg);
@@ -368,27 +374,26 @@ class App {
       this.isPaused = false;
       this._syncPP();
 
-      let done = false;
-      let frameIndex = 0;
-      const maxFrames = Math.ceil(ms / frameMs) + FPS * 2; // hard safety cap
-      const prev = this.stage.onComplete;
-      this.stage.onComplete = () => { done = true; this.stage.onComplete = prev; };
+      // Terminate when simulatedMs reaches ms — independent of onComplete timing.
+      // If animation ends early, stepExport becomes a no-op and remaining frames
+      // show the final state, keeping the video duration correct.
+      let simulatedMs = 0;
+      let frameIndex  = 0;
 
       await new Promise(resolve => {
         const captureFrame = () => {
-          if (encodeError || done || frameIndex >= maxFrames) { resolve(); return; }
-          const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
+          if (encodeError || simulatedMs >= ms) { resolve(); return; }
+          const timestamp = frameIndex * frameDuration;
           try {
-            // Capture current state, then step simulation — so frame 0 shows
-            // the animation at t=0 and frame N shows t = N * frameMs.
             this.stage._drawExportFrame(exportCanvas, W, H);
-            const vf = new VideoFrame(exportCanvas, { timestamp });
+            const vf = new VideoFrame(exportCanvas, { timestamp, duration: frameDuration });
             encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });
             vf.close();
             this.stage.stepExport(frameMs);
+            simulatedMs += frameMs;
           } catch (e) { console.error('frame export error', e); }
           frameIndex++;
-          setTimeout(captureFrame, 0); // yield to event loop; no real-time wait
+          setTimeout(captureFrame, 0);
         };
         captureFrame();
       });
