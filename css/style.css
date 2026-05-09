@@ -483,7 +483,9 @@ a { color: inherit; }
   padding:     0.28rem 0.62rem;
   transition:  background var(--tr), color var(--tr);
 }
-.export-btn:hover { background: var(--bg2); color: var(--text); }
+.export-btn:hover        { background: var(--bg2); color: var(--text); }
+.export-btn.wa           { border-color: #25D366; color: #25D366; }
+.export-btn.wa:hover     { background: #25D366; color: #fff; }
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .toast {
