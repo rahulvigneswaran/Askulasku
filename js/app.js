@@ -76,11 +76,7 @@ class App {
     this.$ppBtn       = document.getElementById('playPauseBtn');
     this.$ppPause     = document.getElementById('pauseIcon');
     this.$ppPlay      = document.getElementById('playIcon');
-    this.$loopBtn     = document.getElementById('loopBtn');
-    this.$vidBtn      = document.getElementById('exportVideoBtn');
-    this.$gifBtn      = document.getElementById('exportGifBtn');
     this.$toast       = document.getElementById('toast');
-    this.$themeBtn    = document.getElementById('themeToggle');
     this.$speedSlider = document.getElementById('speedSlider');
     this.$speedVal    = document.getElementById('speedVal');
     this.$caption     = document.getElementById('boardCaption');
@@ -90,7 +86,7 @@ class App {
     this.phrase       = '';
     this.translations = [];
     this.isPaused     = false;
-    this.isLooping    = false;
+    this.isLooping    = true;
     this.isExporting  = false;
     this.toastTimer   = null;
     this._isPreview   = false;
@@ -100,42 +96,22 @@ class App {
     this.stage            = new Stage(this.$canvas);
     this.stage.onLangChange = i => this._onLang(i);
     this.stage.onComplete   = () => this._onComplete();
+    this.stage.setLoop(true);
     this.stage.start();
+    this.stage.watermarkText = window.location.hostname || 'sayitineverylanguage.com';
 
     // Resize observer
     const ro = new ResizeObserver(() => this.stage.resize());
     ro.observe(this.$canvas);
 
-    this._initTheme();
     this._bindEvents();
     this._renderLangBadges();
-    this._syncSpeedLabel(); // initial label sync
+    this._syncSpeedLabel();
     this._autoPlayPreview();
   }
 
-  // ── Theme ──────────────────────────────────────────────────────────────────
-  _initTheme() {
-    const saved = localStorage.getItem('alTheme');
-    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.dataset.theme = theme;
-    this._syncThemeIcon(theme);
-  }
-
-  _toggleTheme() {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('alTheme', next);
-    this._syncThemeIcon(next);
-  }
-
-  _syncThemeIcon(theme) {
-    if (!this.$themeBtn) return;
-    this.$themeBtn.textContent = theme === 'dark' ? '☀' : '☽';
-    this.$themeBtn.title       = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-  }
-
   // ── Speed ──────────────────────────────────────────────────────────────────
-  _getSpeed()   { return parseInt(this.$speedSlider?.value || '5', 10); }
+  _getSpeed()   { return parseInt(this.$speedSlider?.value || '1', 10); }
   _getTotalMs() { return speedToMs(this._getSpeed()); }
 
   _syncSpeedLabel() {
@@ -152,7 +128,7 @@ class App {
         this._previewData = data;
         this.$caption?.classList.remove('hidden');
         this.stage.setLoop(true);
-        this.stage.play(data, 9000); // preview always at a comfortable fixed pace
+        this.stage.play(data, speedToMs(1));
       }
     } catch { /* network unavailable — silent */ }
   }
@@ -162,7 +138,7 @@ class App {
     this._isPreview = true;
     this.$caption?.classList.remove('hidden');
     this.stage.setLoop(true);
-    this.stage.play(this._previewData, 9000);
+    this.stage.play(this._previewData, speedToMs(1));
   }
 
   // ── Events ─────────────────────────────────────────────────────────────────
@@ -171,10 +147,9 @@ class App {
     this.$input.addEventListener('keydown',   e  => { if (e.key === 'Enter') this._run(); });
     this.$backBtn.addEventListener('click',   () => this._back());
     this.$ppBtn.addEventListener('click',     () => this._togglePause());
-    this.$loopBtn.addEventListener('click',   () => this._toggleLoop());
-    this.$vidBtn.addEventListener('click',    () => this._exportVideo());
-    this.$gifBtn.addEventListener('click',    () => this._exportGIF());
-    this.$themeBtn?.addEventListener('click', () => this._toggleTheme());
+    document.getElementById('downloadBtn')?.addEventListener('click',  () => this._download());
+    document.getElementById('shareBtn')?.addEventListener('click',     () => this._share());
+    document.getElementById('whatsappBtn')?.addEventListener('click',  () => this._shareWhatsApp());
 
     // Speed slider: real-time label update + live pace change during playback
     this.$speedSlider?.addEventListener('input', () => {
@@ -211,11 +186,11 @@ class App {
   }
 
   _show(state) {
-    ['inputPanel','loadingPanel','playbackPanel'].forEach(id =>
+    ['badgesPanel', 'loadingPanel', 'playbackPanel'].forEach(id =>
       document.getElementById(id)?.classList.toggle('hidden', true)
     );
     document.getElementById(
-      state === 'idle'    ? 'inputPanel'   :
+      state === 'idle'    ? 'badgesPanel'   :
       state === 'loading' ? 'loadingPanel' : 'playbackPanel'
     )?.classList.remove('hidden');
   }
@@ -307,11 +282,8 @@ class App {
     this._isPreview = false;
     this.stage.halt();
     this._show('idle');
-    this.$input.value = this.phrase;
-    setTimeout(() => {
-      this.$input.focus();
-      this._restartPreview();
-    }, 80);
+    this.$input.focus();
+    setTimeout(() => this._restartPreview(), 80);
   }
 
   _togglePause() {
@@ -333,46 +305,21 @@ class App {
     this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
   }
 
-  _toggleLoop() {
-    this.isLooping = !this.isLooping;
-    this.stage.setLoop(this.isLooping);
-    this.$loopBtn.classList.toggle('active', this.isLooping);
-    this.$loopBtn.setAttribute('aria-pressed', String(this.isLooping));
-  }
-
-  // ── Export — Video ─────────────────────────────────────────────────────────
-  async _exportVideo() {
-    if (this.isExporting) return;
-    // Prefer WebCodecs → MP4 (Chrome 94+); fall back to MediaRecorder
-    if (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined') {
-      return this._exportMP4WebCodecs();
-    }
-    // Safari: native MP4 recording
-    const mimeOrder = [
-      { mime: 'video/mp4;codecs=avc1', ext: 'mp4' },
-      { mime: 'video/mp4',             ext: 'mp4' },
-      { mime: 'video/webm;codecs=vp9', ext: 'webm' },
-      { mime: 'video/webm;codecs=vp8', ext: 'webm' },
-      { mime: 'video/webm',            ext: 'webm' },
-    ];
-    const chosen = mimeOrder.find(({ mime }) => MediaRecorder?.isTypeSupported(mime));
-    if (!chosen) { this._toast('Video export not supported in this browser.', 'error'); return; }
-    return this._exportMediaRecorder(chosen.mime, chosen.ext);
-  }
-
-  async _exportMP4WebCodecs() {
+  // ── Export — shared render ─────────────────────────────────────────────────
+  async _renderVideoBlob() {
     this.isExporting = true;
     this.stage.exportMode = true;
     this._toast('Recording…', 'info');
 
-    let fallbackToWebM = false;
     try {
-      // Use physical canvas pixels; H.264 requires even dimensions
-      const W = Math.round(this.$canvas.width  / 2) * 2;
-      const H = Math.round(this.$canvas.height / 2) * 2;
+      // Instagram Reels/Stories spec: 1080x1920, 30fps, H.264 High Profile
+      const W   = 1080, H = 1920;
       const FPS = 30;
       const ms  = this._getTotalMs();
-      const frameMs = 1000 / FPS;
+      const frameMs       = 1000 / FPS;
+      const frameDuration = Math.round(1_000_000 / FPS);
+
+      const exportCanvas = new OffscreenCanvas(W, H);
 
       const target = new Mp4Muxer.ArrayBufferTarget();
       const muxer  = new Mp4Muxer.Muxer({
@@ -387,157 +334,87 @@ class App {
         error:  e => { encodeError = e; },
       });
 
-      const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 6_000_000, framerate: FPS };
+      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080x1920@30fps
+      // latencyMode:'realtime' disables B-frames so PTS == DTS — prevents mp4-muxer timing drift
+      const cfg = {
+        codec: 'avc1.640033', width: W, height: H,
+        bitrate: 8_000_000, framerate: FPS,
+        latencyMode: 'realtime',
+      };
       const support = await VideoEncoder.isConfigSupported(cfg);
-      if (!support.supported) throw new Error('H.264 codec not supported');
+      if (!support.supported) throw new Error('H.264 High Profile not supported');
       encoder.configure(cfg);
 
       this.stage.setLoop(false);
       this.stage.play(this.translations, ms);
+      this.stage.pause();
       this.isPaused = false;
       this._syncPP();
 
-      let done = false;
-      let frameIndex = 0;
-      const prev = this.stage.onComplete;
-      this.stage.onComplete = () => { done = true; this.stage.onComplete = prev; };
+      let simulatedMs = 0;
+      let frameIndex  = 0;
 
       await new Promise(resolve => {
         const captureFrame = () => {
-          if (encodeError || done || frameIndex * frameMs > ms + 300) { resolve(); return; }
-          const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
+          if (encodeError || simulatedMs >= ms) { resolve(); return; }
+          const timestamp = frameIndex * frameDuration;
           try {
-            const vf = new VideoFrame(this.$canvas, { timestamp });
+            this.stage._drawExportFrame(exportCanvas, W, H);
+            const vf = new VideoFrame(exportCanvas, { timestamp, duration: frameDuration });
             encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });
             vf.close();
-          } catch { /* canvas not ready yet */ }
+            this.stage.stepExport(frameMs);
+            simulatedMs += frameMs;
+          } catch (e) { console.error('frame export error', e); }
           frameIndex++;
-          setTimeout(captureFrame, frameMs);
+          setTimeout(captureFrame, 0);
         };
         captureFrame();
-        setTimeout(resolve, ms + 2000);
       });
 
       if (encodeError) throw encodeError;
       await encoder.flush();
       muxer.finalize();
 
-      this._dl(new Blob([target.buffer], { type: 'video/mp4' }), `asku-lasku-${this._slug()}.mp4`);
-      this._toast('Video saved!', 'success');
+      return new Blob([target.buffer], { type: 'video/mp4' });
 
     } catch (e) {
       console.error('MP4 WebCodecs export failed:', e);
-      fallbackToWebM = true;
+      return null;
     } finally {
       this.isExporting = false;
       this.stage.exportMode = false;
-      this.stage.setLoop(this.isLooping);
-    }
-
-    if (fallbackToWebM) {
-      const webmMime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
-        .find(m => MediaRecorder?.isTypeSupported(m));
-      if (webmMime) return this._exportMediaRecorder(webmMime, 'webm');
-      this._toast('Video export failed.', 'error');
-    }
-  }
-
-  async _exportMediaRecorder(mime, ext) {
-    if (!window.MediaRecorder) { this._toast('MediaRecorder not supported.', 'error'); return; }
-    this.isExporting = true;
-    this.stage.exportMode = true;
-    this._toast('Recording…', 'info');
-    try {
-      const ms     = this._getTotalMs();
-      const stream = this.$canvas.captureStream(30);
-      const rec    = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 });
-      const chunks = [];
-      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-
-      this.stage.setLoop(false);
-      this.stage.play(this.translations, ms);
-      this.isPaused = false;
-      this._syncPP();
-
-      rec.start(80);
-      await new Promise(resolve => {
-        const prev = this.stage.onComplete;
-        this.stage.onComplete = () => { this.stage.onComplete = prev; resolve(); };
-        setTimeout(resolve, ms + 1500);
-      });
-      rec.stop();
-      await new Promise(r => { rec.onstop = r; });
-
-      this._dl(new Blob(chunks, { type: mime }), `asku-lasku-${this._slug()}.${ext}`);
-      this._toast('Video saved!', 'success');
-    } catch (e) {
-      console.error(e);
-      this._toast('Video export failed.', 'error');
-    } finally {
-      this.isExporting = false;
-      this.stage.exportMode = false;
+      this.stage.resume();
       this.stage.setLoop(this.isLooping);
     }
   }
 
-  // ── Export — GIF ───────────────────────────────────────────────────────────
-  async _exportGIF() {
+  async _download() {
     if (this.isExporting) return;
-    if (typeof GIF === 'undefined') { this._toast('GIF library not loaded — try Video.', 'error'); return; }
+    const blob = await this._renderVideoBlob();
+    if (!blob) { this._toast('Export failed.', 'error'); return; }
+    this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
+    this._toast('Video saved!', 'success');
+  }
 
-    this.isExporting = true;
-    this.stage.exportMode = true;
-    this._toast('Capturing frames…', 'info');
-
-    try {
-      const scale = Math.min(1, 480 / this.stage.W);
-      const W     = Math.round(this.stage.W * scale);
-      const H     = Math.round(this.stage.H * scale);
-
-      const gif = new GIF({ workers: 2, quality: 8, width: W, height: H, workerScript: 'vendor/gif.worker.js' });
-      gif.on('progress', p => this._toast(`Encoding GIF… ${Math.round(p * 100)}%`, 'info'));
-      gif.on('finished', blob => {
-        this._dl(blob, `asku-lasku-${this._slug()}.gif`);
-        this._toast('GIF saved!', 'success');
-        this.isExporting = false;
-        this.stage.exportMode = false;
-        this.stage.setLoop(this.isLooping);
-        this.stage.play(this.translations, this._getTotalMs());
-      });
-
-      const tmp = Object.assign(document.createElement('canvas'), { width: W, height: H });
-      const tc  = tmp.getContext('2d');
-      const FPS = 15, fMs = 1000 / FPS;
-      const ms  = this._getTotalMs();
-
-      this.stage.setLoop(false);
-      this.stage.play(this.translations, ms);
-      this.isPaused = false;
-      this._syncPP();
-
-      let done = false;
-      const prev = this.stage.onComplete;
-      this.stage.onComplete = () => { this.stage.onComplete = prev; done = true; };
-
-      await new Promise(resolve => {
-        const frame = () => {
-          if (done) { resolve(); return; }
-          tc.drawImage(this.$canvas, 0, 0, this.$canvas.width, this.$canvas.height, 0, 0, W, H);
-          gif.addFrame(tc, { delay: Math.round(fMs), copy: true });
-          setTimeout(frame, fMs);
-        };
-        frame();
-        setTimeout(resolve, ms + 1500);
-      });
-
-      gif.render();
-    } catch (e) {
-      console.error(e);
-      this._toast('GIF export failed.', 'error');
-      this.isExporting = false;
-      this.stage.exportMode = false;
-      this.stage.setLoop(this.isLooping);
+  async _share() {
+    if (this.isExporting) return;
+    const blob = await this._renderVideoBlob();
+    if (!blob) { this._toast('Export failed.', 'error'); return; }
+    const file = new File([blob], `asku-lasku-${this._slug()}.mp4`, { type: 'video/mp4' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Say it in every language', text: window.location.href });
+      } catch (e) { if (e.name !== 'AbortError') this._toast('Share failed.', 'error'); }
+    } else {
+      this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
+      this._toast('Video saved! Upload it to Instagram as a Reel.', 'success');
     }
+  }
+
+  _shareWhatsApp() {
+    const text = `Say it in every language 🌍\n${window.location.href}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

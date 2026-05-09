@@ -12,20 +12,28 @@
   --accent-l: #F0824A;
   --radius:   8px;
   --tr:       0.18s ease;
-  --nav-h:    56px;
 }
 
-[data-theme="dark"] {
-  --bg:      #111111;
-  --bg2:     #1A1A1A;
-  --surface: #1C1C1C;
-  --text:    #F4F4F5;
-  --muted:   #71717A;
-  --subtle:  #52525B;
-  --border:  #27272A;
-  --border2: #3F3F46;
-  --accent:  #F07540;
-  --accent-l:#F5915E;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:      #111111;
+    --bg2:     #1A1A1A;
+    --surface: #1C1C1C;
+    --text:    #F4F4F5;
+    --muted:   #71717A;
+    --subtle:  #52525B;
+    --border:  #27272A;
+    --border2: #3F3F46;
+    --accent:  #F07540;
+    --accent-l:#F5915E;
+  }
+
+  .board-wrap {
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.07),
+      0 12px 48px rgba(0,0,0,0.60),
+      0 3px 14px rgba(0,0,0,0.45);
+  }
 }
 
 /* ── Reset ────────────────────────────────────────────────────────────────── */
@@ -44,64 +52,14 @@ body {
 a { color: inherit; }
 .hidden { display: none !important; }
 
-/* ── Nav ──────────────────────────────────────────────────────────────────── */
-#nav {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background:  var(--bg);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2rem;
-  height: var(--nav-h);
-}
-
-.logo {
-  text-decoration: none;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
-.logo-primary  { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
-.logo-secondary { font-size: 0.78rem; color: var(--muted); }
-
-.nav-right { display: flex; align-items: center; gap: 0.25rem; }
-
-.nav-link {
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 0.875rem;
-  font-weight: 500;
-  padding: 0.35rem 0.7rem;
-  border-radius: var(--radius);
-  transition: background var(--tr), color var(--tr);
-}
-.nav-link:hover { background: var(--bg2); color: var(--text); }
-
-.theme-btn {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 0.3rem 0.55rem;
-  line-height: 1;
-  transition: background var(--tr), color var(--tr);
-}
-.theme-btn:hover { background: var(--bg2); color: var(--text); }
-
 /* ── Main: two-column desktop / stacked mobile ───────────────────────────── */
 .main {
   display: grid;
-  /* Right col (canvas) auto-sized, left col takes remaining space */
   grid-template-columns: 1fr auto;
   grid-template-areas: "left right";
   max-width: 1100px;
   margin: 0 auto;
-  height: calc(100vh - var(--nav-h));
+  height: 100vh;
   overflow: hidden;
   padding: 0 2rem;
   gap: 3rem;
@@ -119,8 +77,21 @@ a { color: inherit; }
   scrollbar-color: var(--border2) transparent;
 }
 
-/* Panels: the switchable area (idle/loading/playback) fills available space */
-.panels {
+/* Hero section — always visible */
+.hero-section {
+  flex-shrink: 0;
+}
+
+/* Status zone — the only part that switches between idle/loading/playing */
+.status-zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 0.25rem;
+}
+
+.status-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -153,7 +124,7 @@ a { color: inherit; }
 /* ── Board ───────────────────────────────────────────────────────────────── */
 .board-wrap {
   position: relative;
-  height: min(calc(100vh - var(--nav-h) - 3rem), 640px);
+  height: min(calc(100vh - 3rem), 640px);
   aspect-ratio: 9 / 16;
   border-radius: 18px;
   overflow: hidden;
@@ -164,13 +135,6 @@ a { color: inherit; }
   flex-shrink: 0;
 }
 
-[data-theme="dark"] .board-wrap {
-  box-shadow:
-    0 0 0 1px rgba(255,255,255,0.07),
-    0 12px 48px rgba(0,0,0,0.60),
-    0 3px 14px rgba(0,0,0,0.45);
-}
-
 #stage {
   display: block;
   width:   100%;
@@ -179,20 +143,16 @@ a { color: inherit; }
 }
 
 /* ── Morph overlay ───────────────────────────────────────────────────────── */
-/* Covers the flip zone (top 62%) of the canvas, above the label zone */
 .morph-overlay {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 62%;
-  /* The gooey filter: composites children, applies threshold, then smooths */
   filter: url(#morphThreshold) blur(0.5px);
   pointer-events: none;
-  /* Hidden by default; shown by stage.js when morph mode is active */
 }
 
 .morph-text {
   position: absolute;
-  /* Match canvas maxW = 74% of stage width */
   left: 13%; right: 13%;
   top: 50%;
   transform: translateY(-50%);
@@ -200,14 +160,12 @@ a { color: inherit; }
   white-space: pre-wrap;
   word-break: keep-all;
   overflow-wrap: break-word;
-  /* Font stack must match canvas FONT constant for consistent wrapping */
   font-family: 'Syne', 'Space Grotesk', 'Noto Sans', 'Noto Sans SC',
     'Noto Sans JP', 'Noto Sans KR', 'Noto Sans Arabic', 'Noto Sans Devanagari',
     'Noto Sans Tamil', 'Noto Sans Thai', 'Noto Sans Hebrew', 'Noto Serif', sans-serif;
   font-weight: 800;
   line-height: 1.25;
   color: #F5F0E8;
-  /* font-size set dynamically by stage.js */
 }
 
 /* ── Board caption ───────────────────────────────────────────────────────── */
@@ -414,20 +372,21 @@ a { color: inherit; }
   color: var(--subtle);
 }
 
-/* ── Loading panel ───────────────────────────────────────────────────────── */
-#loadingPanel {
+/* ── Loading state ───────────────────────────────────────────────────────── */
+.loading-row {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.9rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
 }
 
 .spin {
-  width: 26px; height: 26px;
+  width: 20px; height: 20px;
   border: 2px solid var(--border2);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -438,7 +397,7 @@ a { color: inherit; }
   display: flex;
   flex-wrap: wrap;
   gap: 0.28rem;
-  max-height: 140px;
+  max-height: 130px;
   overflow-y: auto;
   scrollbar-width: none;
 }
@@ -455,12 +414,12 @@ a { color: inherit; }
 }
 @keyframes popIn { from { opacity:0; transform: scale(0.82); } to { opacity:1; transform: scale(1); } }
 
-/* ── Playback panel ──────────────────────────────────────────────────────── */
+/* ── Playback controls ───────────────────────────────────────────────────── */
 #progressWrap {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
 }
 
 #progressBar {
@@ -524,7 +483,9 @@ a { color: inherit; }
   padding:     0.28rem 0.62rem;
   transition:  background var(--tr), color var(--tr);
 }
-.export-btn:hover { background: var(--bg2); color: var(--text); }
+.export-btn:hover        { background: var(--bg2); color: var(--text); }
+.export-btn.wa           { border-color: #25D366; color: #25D366; }
+.export-btn.wa:hover     { background: #25D366; color: #fff; }
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 .toast {
@@ -629,7 +590,6 @@ a { color: inherit; }
     gap:            0;
   }
 
-  /* Canvas on top on mobile */
   .right-col {
     order:         -1;
     padding:       1rem 0 0;
@@ -649,7 +609,7 @@ a { color: inherit; }
     overflow: visible;
   }
 
-  .panels { flex: 0 0 auto; justify-content: flex-start; }
+  .status-zone { flex: 0 0 auto; }
 
   .bottom-controls { margin-top: 1.25rem; }
 
@@ -657,9 +617,7 @@ a { color: inherit; }
   .hero-sub      { font-size: 0.875rem; margin-bottom: 1.1rem; }
   .input-row     { flex-direction: column; }
   .animate-btn   { justify-content: center; }
-  .logo-secondary { display: none; }
   #controls      { flex-wrap: wrap; }
-  #nav           { padding: 0 1.25rem; }
 }
 
 /* ── Narrow desktop (768-1000px) ─────────────────────────────────────────── */

@@ -61,19 +61,24 @@ class Stage {
     this.onLangChange = null;
     this.onComplete   = null;
 
+    // Watermark text drawn on export frames (set from app.js)
+    this.watermarkText = '';
+
     this.resize();
+    this._renderDPR = window.devicePixelRatio || 1;
     this._syncOverlay(false);
   }
 
-  // ── Layout zones ───────────────────────────────────────────────────────────
+  // ── Layout zones ─────────────────────────────────────────────────────
   // Top 62% = flip/morph zone. Fold at 31%. Label zone: 62%–100%.
   _flipH()  { return this.H * 0.62; }
   _foldY()  { return this._flipH() / 2; }
   _labelY() { return this._flipH() + (this.H - this._flipH()) * 0.40; }
 
-  // ── Setup ──────────────────────────────────────────────────────────────────
+  // ── Setup ──────────────────────────────────────────────────────────
   resize() {
     const dpr  = window.devicePixelRatio || 1;
+    this._renderDPR = dpr;
     const rect = this.canvas.getBoundingClientRect();
     this.W = Math.max(rect.width,  1);
     this.H = Math.max(rect.height, 1);
@@ -82,11 +87,13 @@ class Stage {
     this.canvas.style.width  = this.W + 'px';
     this.canvas.style.height = this.H + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Re-apply font size to morph elements after resize
     this._syncMorphTextSize();
   }
 
-  // ── Text fitting ───────────────────────────────────────────────────────────
+  // Scale factor relative to 640 px reference height — used to scale hardcoded px values
+  _scale() { return this.H / 640; }
+
+  // ── Text fitting ─────────────────────────────────────────────────────
   _wrapWords(text, maxW, size) {
     const ctx = this.ctx;
     ctx.font = `800 ${size}px ${FONT}`;
@@ -112,8 +119,8 @@ class Stage {
     const maxW    = this.W * 0.74;
     const maxH    = flipH * 0.68;
     const maxLines = 3;
-    const minSize  = 18;
-    let size = Math.min(96, Math.floor(flipH * 0.27));
+    const minSize  = Math.round(18 * this._scale());
+    let size = Math.floor(flipH * 0.27); // no hardcoded cap — scales with canvas height
 
     while (size >= minSize) {
       this.ctx.font = `800 ${size}px ${FONT}`;
@@ -136,7 +143,7 @@ class Stage {
     return { lines: [text.slice(0, 20)], fontSize: 10 };
   }
 
-  // ── Loop ───────────────────────────────────────────────────────────────────
+  // ── Loop ────────────────────────────────────────────────────────────
   start() {
     if (this.rafId) return;
     this.lastTs = performance.now();
@@ -154,7 +161,7 @@ class Stage {
     if (this.rafId) { cancelAnimationFrame(this.rafId); this.rafId = null; }
   }
 
-  // ── Update ─────────────────────────────────────────────────────────────────
+  // ── Update ──────────────────────────────────────────────────────────
   _update(dt) {
     if (!this.isPlaying || this.isPaused) return;
     this.elapsed += dt;
@@ -200,7 +207,7 @@ class Stage {
     }
   }
 
-  // ── Draw dispatcher ────────────────────────────────────────────────────────
+  // ── Draw dispatcher ──────────────────────────────────────────────────
   _draw() {
     const { W, H } = this;
 
@@ -211,6 +218,8 @@ class Stage {
     bg.addColorStop(1,   '#070707');
     this.ctx.fillStyle = bg;
     this.ctx.fillRect(0, 0, W, H);
+    // Film grain breaks up the subtle dark gradient so H.264 doesn't produce banding
+    if (this.exportMode) this._applyGrain();
 
     const inTransition = this.phase === 'transition' && this.transP < 1;
     const useMorph = (this.transitionMode === 'morph') && !this.exportMode;
@@ -252,10 +261,12 @@ class Stage {
       this._drawVignette();
     }
 
+    if (this.exportMode) this._drawWatermark();
+
     if (!this.isPlaying && !this.curLines.length) this._drawPlaceholder();
   }
 
-  // ── Morph: DOM overlay ─────────────────────────────────────────────────────
+  // ── Morph: DOM overlay ──────────────────────────────────────────────────
   _syncOverlay(visible) {
     if (!this.morphOverlay) return;
     this.morphOverlay.style.display = visible ? 'block' : 'none';
@@ -314,38 +325,67 @@ class Stage {
     this.morphEl2.style.opacity = alpha2;
   }
 
-  // ── Morph: canvas-only fallback (for export) ───────────────────────────────
+  // ── Morph: canvas-only fallback (for export) ─────────────────────────────
+  // Replicates the SVG feColorMatrix gooey threshold:
+  // - Both texts are blurred onto an offscreen canvas (their alphas combine)
+  // - A hard threshold snaps partial-alpha pixels to fully opaque or transparent
+  // - This gives the same liquid-merge boundary as the DOM+SVG version
   _drawMorphCanvas(p) {
-    const ctx   = this.ctx;
-    const foldY = this._foldY();
+    const mainCtx = this.ctx;
+    const foldY   = this._foldY();
+    const flipH   = this._flipH();
+    const dpr     = this._renderDPR || 1;
+    const pw      = this.canvas.width;
+    const ph      = Math.round(flipH * dpr);
+    const sc      = this._scale();
 
-    // Outgoing text
-    const f1     = p;
-    const blur1  = Math.min(8 / Math.max(1 - f1, 0.001) - 8, 80);
-    const alpha1 = Math.pow(1 - f1, 0.4);
+    // Blur values scaled by canvas height so export (3× screen size) looks identical
+    const blur1  = Math.min(8 / Math.max(1 - p, 0.001) - 8, 80) * sc;
+    const alpha1 = Math.pow(1 - p, 0.4);
+    const blur2  = Math.min(8 / Math.max(p,     0.001) - 8, 80) * sc;
+    const alpha2 = Math.pow(p, 0.4);
 
-    // Incoming text
-    const f2     = p;
-    const blur2  = Math.min(8 / Math.max(f2, 0.001) - 8, 80);
-    const alpha2 = Math.pow(f2, 0.4);
+    // Render both blurred texts onto a transparent offscreen canvas
+    // (same logical dimensions as the flip zone — foldY is the vertical center of both)
+    const off  = new OffscreenCanvas(pw, ph);
+    const octx = off.getContext('2d');
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    this.ctx = octx; // redirect _drawLines to offscreen
     if (alpha1 > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = alpha1;
-      if (blur1 > 0.3) ctx.filter = `blur(${blur1.toFixed(1)}px)`;
+      octx.save();
+      octx.globalAlpha = alpha1;
+      if (blur1 > 0.3) octx.filter = `blur(${blur1.toFixed(1)}px)`;
       this._drawLines(this.curLines, this.curSize, this.curDir, foldY, 1);
-      ctx.restore();
+      octx.restore();
     }
-
     if (alpha2 > 0.01) {
-      ctx.save();
-      ctx.globalAlpha = alpha2;
-      if (blur2 > 0.3) ctx.filter = `blur(${blur2.toFixed(1)}px)`;
+      octx.save();
+      octx.globalAlpha = alpha2;
+      if (blur2 > 0.3) octx.filter = `blur(${blur2.toFixed(1)}px)`;
       this._drawLines(this.nxtLines, this.nxtSize, this.nxtDir, foldY, 1);
-      ctx.restore();
+      octx.restore();
     }
+    this.ctx = mainCtx;
 
-    // Label cross-fades in the second half
+    // Apply SVG feColorMatrix threshold: A' = clamp(255·A_norm − 140, 0, 1)
+    // In 8-bit this means: alpha < 140 → 0 (transparent), alpha >= 140 → 255 (opaque)
+    // The combined blur of both texts causes overlapping regions to exceed the threshold
+    // and "merge" with a crisp liquid boundary — the gooey effect.
+    const imgData = octx.getImageData(0, 0, pw, ph);
+    const d = imgData.data;
+    for (let i = 3; i < d.length; i += 4) {
+      d[i] = d[i] < 140 ? 0 : 255;
+    }
+    octx.putImageData(imgData, 0, 0);
+
+    // Composite onto main canvas with the same 0.5px softening the CSS applies
+    mainCtx.save();
+    mainCtx.filter = `blur(${(0.5 * sc).toFixed(2)}px)`;
+    mainCtx.drawImage(off, 0, 0, this.W, flipH);
+    mainCtx.restore();
+
+    // Label cross-fades
     if (p < 0.5) {
       this._drawLabel(this.curLang, this.curNative, Math.max(0, 1 - p * 2.5), 0);
     } else {
@@ -353,7 +393,27 @@ class Stage {
     }
   }
 
-  // ── Flip: canvas split-flap ────────────────────────────────────────────────
+  // ── Film grain (export only) ────────────────────────────────────────────
+  _applyGrain() {
+    const { W, H, ctx } = this;
+    const tileSize = 96;
+    const off  = new OffscreenCanvas(tileSize, tileSize);
+    const octx = off.getContext('2d');
+    const img  = octx.createImageData(tileSize, tileSize);
+    const d    = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const n = Math.random() * 22 | 0;
+      d[i] = d[i + 1] = d[i + 2] = n;
+      d[i + 3] = 22; // ~9% opacity — enough to dither, subtle enough not to show
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.fillStyle = ctx.createPattern(off, 'repeat');
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // ── Flip: canvas split-flap ────────────────────────────────────────────────────
   _drawSettled() {
     const { W } = this;
     const foldY = this._foldY();
@@ -458,7 +518,7 @@ class Stage {
     }
   }
 
-  // ── Shared drawing primitives ──────────────────────────────────────────────
+  // ── Shared drawing primitives ─────────────────────────────────────────────────
   _drawLines(lines, size, dir, centerY, opacity) {
     if (!lines.length || opacity <= 0) return;
     const ctx  = this.ctx;
@@ -482,7 +542,8 @@ class Stage {
     const ctx   = this.ctx;
     const cx    = this.W / 2;
     const baseY = this._labelY() + (slideDown || 0);
-    const nSize = Math.max(12, Math.min(19, this.H * 0.030));
+    const sc    = this._scale();
+    const nSize = Math.round(Math.min(sc * 22, this.H * 0.030));
 
     ctx.save();
     ctx.globalAlpha  = opacity;
@@ -496,10 +557,10 @@ class Stage {
     ctx.fillText(native, cx, baseY);
 
     // English name — small, dim, spaced caps
-    ctx.font         = `500 10px 'Inter', sans-serif`;
-    ctx.fillStyle    = 'rgba(255,255,255,0.26)';
+    ctx.font          = `500 ${Math.round(sc * 10)}px 'Inter', sans-serif`;
+    ctx.fillStyle     = 'rgba(255,255,255,0.26)';
     ctx.letterSpacing = '0.13em';
-    ctx.fillText(lang.toUpperCase(), cx, baseY + nSize + 12);
+    ctx.fillText(lang.toUpperCase(), cx, baseY + nSize + Math.round(sc * 12));
 
     ctx.restore();
   }
@@ -511,7 +572,7 @@ class Stage {
     ctx.save();
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font         = `400 13px 'Inter', sans-serif`;
+    ctx.font         = `400 ${Math.round(this._scale() * 13)}px 'Inter', sans-serif`;
     ctx.fillStyle    = 'rgba(255,255,255,0.13)';
     ctx.fillText('Your phrase will appear here', cx, cy);
     ctx.restore();
@@ -540,7 +601,58 @@ class Stage {
     ctx.fillRect(0, H * 0.93, W, H * 0.07);
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  _drawWatermark() {
+    if (!this.watermarkText) return;
+    const ctx = this.ctx;
+    const sc  = this._scale();
+    const pad = Math.round(sc * 18);
+    ctx.save();
+    ctx.globalAlpha   = 0.48;
+    ctx.textAlign     = 'right';
+    ctx.textBaseline  = 'bottom';
+    ctx.direction     = 'ltr';
+    ctx.font          = `400 ${Math.round(sc * 11)}px 'Inter',sans-serif`;
+    ctx.letterSpacing = '0.04em';
+    ctx.fillStyle     = '#ffffff';
+    ctx.fillText(this.watermarkText, this.W - pad, this.H - pad);
+    ctx.restore();
+  }
+
+  // ── High-resolution export frame rendering ────────────────────────────────────────────
+  // Temporarily redirects rendering to an OffscreenCanvas at a larger resolution,
+  // scaling font sizes proportionally so the output is pixel-perfect at the
+  // target dimensions (not just an upscale of the visible canvas).
+  _drawExportFrame(exportCanvas, W, H) {
+    const scale = W / this.W;
+
+    const saved = {
+      ctx: this.ctx, W: this.W, H: this.H, canvas: this.canvas,
+      curSize: this.curSize, nxtSize: this.nxtSize, renderDPR: this._renderDPR,
+    };
+
+    const exportCtx = exportCanvas.getContext('2d');
+    exportCtx.setTransform(1, 0, 0, 1, 0, 0); // export canvas is 1:1 physical pixels
+
+    this.ctx        = exportCtx;
+    this.W          = W;
+    this.H          = H;
+    this.canvas     = exportCanvas;
+    this.curSize    = Math.round(saved.curSize * scale);
+    this.nxtSize    = Math.round(saved.nxtSize * scale);
+    this._renderDPR = 1; // no DPR scaling on the export canvas
+
+    this._draw();
+
+    this.ctx        = saved.ctx;
+    this.W          = saved.W;
+    this.H          = saved.H;
+    this.canvas     = saved.canvas;
+    this.curSize    = saved.curSize;
+    this.nxtSize    = saved.nxtSize;
+    this._renderDPR = saved.renderDPR;
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
   play(translations, totalMs) {
     if (!translations.length) return;
     this.translations = translations;
@@ -601,6 +713,15 @@ class Stage {
 
   pause()  { this.isPaused = true;  }
   resume() { this.isPaused = false; }
+
+  // Advance animation by exactly dt ms, bypassing isPaused — for frame-accurate export.
+  // The RAF loop is paused during export so the simulation doesn't advance on its own.
+  stepExport(dt) {
+    const was = this.isPaused;
+    this.isPaused = false;
+    this._update(dt);
+    this.isPaused = was;
+  }
 
   halt() {
     this.isPlaying    = false;
