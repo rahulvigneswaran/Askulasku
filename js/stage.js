@@ -332,11 +332,12 @@ class Stage {
     const dpr     = this._renderDPR || 1;
     const pw      = this.canvas.width;
     const ph      = Math.round(flipH * dpr);
+    const sc      = this._scale();
 
-    // Same blur/alpha formulas as the DOM morph
-    const blur1  = Math.min(8 / Math.max(1 - p, 0.001) - 8, 80);
+    // Blur values scaled by canvas height so export (3x screen size) looks identical
+    const blur1  = Math.min(8 / Math.max(1 - p, 0.001) - 8, 80) * sc;
     const alpha1 = Math.pow(1 - p, 0.4);
-    const blur2  = Math.min(8 / Math.max(p,     0.001) - 8, 80);
+    const blur2  = Math.min(8 / Math.max(p,     0.001) - 8, 80) * sc;
     const alpha2 = Math.pow(p, 0.4);
 
     // Render both blurred texts onto a transparent offscreen canvas
@@ -363,7 +364,7 @@ class Stage {
     this.ctx = mainCtx;
 
     // Apply SVG feColorMatrix threshold: A' = clamp(255·A_norm − 140, 0, 1)
-    // In 8-bit this means: alpha < 140 → 0 (transparent), alpha ≥ 140 → 255 (opaque)
+    // In 8-bit this means: alpha < 140 → 0 (transparent), alpha >= 140 → 255 (opaque)
     // The combined blur of both texts causes overlapping regions to exceed the threshold
     // and "merge" with a crisp liquid boundary — the gooey effect.
     const imgData = octx.getImageData(0, 0, pw, ph);
@@ -375,7 +376,7 @@ class Stage {
 
     // Composite onto main canvas with the same 0.5px softening the CSS applies
     mainCtx.save();
-    mainCtx.filter = 'blur(0.5px)';
+    mainCtx.filter = `blur(${(0.5 * sc).toFixed(2)}px)`;
     mainCtx.drawImage(off, 0, 0, this.W, flipH);
     mainCtx.restore();
 

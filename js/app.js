@@ -76,11 +76,9 @@ class App {
     this.$ppBtn       = document.getElementById('playPauseBtn');
     this.$ppPause     = document.getElementById('pauseIcon');
     this.$ppPlay      = document.getElementById('playIcon');
-    this.$loopBtn     = document.getElementById('loopBtn');
     this.$vidBtn      = document.getElementById('exportVideoBtn');
     this.$gifBtn      = document.getElementById('exportGifBtn');
     this.$toast       = document.getElementById('toast');
-    this.$themeBtn    = document.getElementById('themeToggle');
     this.$speedSlider = document.getElementById('speedSlider');
     this.$speedVal    = document.getElementById('speedVal');
     this.$caption     = document.getElementById('boardCaption');
@@ -90,7 +88,7 @@ class App {
     this.phrase       = '';
     this.translations = [];
     this.isPaused     = false;
-    this.isLooping    = false;
+    this.isLooping    = true;
     this.isExporting  = false;
     this.toastTimer   = null;
     this._isPreview   = false;
@@ -100,38 +98,17 @@ class App {
     this.stage            = new Stage(this.$canvas);
     this.stage.onLangChange = i => this._onLang(i);
     this.stage.onComplete   = () => this._onComplete();
+    this.stage.setLoop(true);
     this.stage.start();
 
     // Resize observer
     const ro = new ResizeObserver(() => this.stage.resize());
     ro.observe(this.$canvas);
 
-    this._initTheme();
     this._bindEvents();
     this._renderLangBadges();
-    this._syncSpeedLabel(); // initial label sync
+    this._syncSpeedLabel();
     this._autoPlayPreview();
-  }
-
-  // ── Theme ──────────────────────────────────────────────────────────────────
-  _initTheme() {
-    const saved = localStorage.getItem('alTheme');
-    const theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    document.documentElement.dataset.theme = theme;
-    this._syncThemeIcon(theme);
-  }
-
-  _toggleTheme() {
-    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem('alTheme', next);
-    this._syncThemeIcon(next);
-  }
-
-  _syncThemeIcon(theme) {
-    if (!this.$themeBtn) return;
-    this.$themeBtn.textContent = theme === 'dark' ? '☀' : '☽';
-    this.$themeBtn.title       = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   }
 
   // ── Speed ──────────────────────────────────────────────────────────────────
@@ -152,7 +129,7 @@ class App {
         this._previewData = data;
         this.$caption?.classList.remove('hidden');
         this.stage.setLoop(true);
-        this.stage.play(data, 9000); // preview always at a comfortable fixed pace
+        this.stage.play(data, speedToMs(1));
       }
     } catch { /* network unavailable — silent */ }
   }
@@ -162,7 +139,7 @@ class App {
     this._isPreview = true;
     this.$caption?.classList.remove('hidden');
     this.stage.setLoop(true);
-    this.stage.play(this._previewData, 9000);
+    this.stage.play(this._previewData, speedToMs(1));
   }
 
   // ── Events ─────────────────────────────────────────────────────────────────
@@ -171,10 +148,8 @@ class App {
     this.$input.addEventListener('keydown',   e  => { if (e.key === 'Enter') this._run(); });
     this.$backBtn.addEventListener('click',   () => this._back());
     this.$ppBtn.addEventListener('click',     () => this._togglePause());
-    this.$loopBtn.addEventListener('click',   () => this._toggleLoop());
     this.$vidBtn.addEventListener('click',    () => this._exportVideo());
     this.$gifBtn.addEventListener('click',    () => this._exportGIF());
-    this.$themeBtn?.addEventListener('click', () => this._toggleTheme());
 
     // Speed slider: real-time label update + live pace change during playback
     this.$speedSlider?.addEventListener('input', () => {
@@ -211,11 +186,11 @@ class App {
   }
 
   _show(state) {
-    ['inputPanel','loadingPanel','playbackPanel'].forEach(id =>
+    ['badgesPanel', 'loadingPanel', 'playbackPanel'].forEach(id =>
       document.getElementById(id)?.classList.toggle('hidden', true)
     );
     document.getElementById(
-      state === 'idle'    ? 'inputPanel'   :
+      state === 'idle'    ? 'badgesPanel'   :
       state === 'loading' ? 'loadingPanel' : 'playbackPanel'
     )?.classList.remove('hidden');
   }
@@ -307,11 +282,8 @@ class App {
     this._isPreview = false;
     this.stage.halt();
     this._show('idle');
-    this.$input.value = this.phrase;
-    setTimeout(() => {
-      this.$input.focus();
-      this._restartPreview();
-    }, 80);
+    this.$input.focus();
+    setTimeout(() => this._restartPreview(), 80);
   }
 
   _togglePause() {
@@ -331,13 +303,6 @@ class App {
   _syncPP() {
     this.$ppPause.classList.toggle('hidden',  this.isPaused);
     this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
-  }
-
-  _toggleLoop() {
-    this.isLooping = !this.isLooping;
-    this.stage.setLoop(this.isLooping);
-    this.$loopBtn.classList.toggle('active', this.isLooping);
-    this.$loopBtn.setAttribute('aria-pressed', String(this.isLooping));
   }
 
   // ── Export — Video ─────────────────────────────────────────────────────────
@@ -367,14 +332,12 @@ class App {
 
     let fallbackToWebM = false;
     try {
-      // Instagram Reels/Stories spec: 1080×1920, 60fps, H.264 High Profile
+      // Instagram Reels/Stories spec: 1080x1920, 60fps, H.264 High Profile
       const W   = 1080, H = 1920;
       const FPS = 60;
       const ms  = this._getTotalMs();
       const frameMs = 1000 / FPS;
 
-      // Offscreen canvas at the export resolution — rendered independently of
-      // the visible canvas so the quality isn't limited by screen DPR or size
       const exportCanvas = new OffscreenCanvas(W, H);
 
       const target = new Mp4Muxer.ArrayBufferTarget();
@@ -390,7 +353,7 @@ class App {
         error:  e => { encodeError = e; },
       });
 
-      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080×1920@60fps
+      // avc1.640033 = H.264 High Profile Level 5.1 — supports 1080x1920@60fps
       const cfg = { codec: 'avc1.640033', width: W, height: H, bitrate: 15_000_000, framerate: FPS };
       const support = await VideoEncoder.isConfigSupported(cfg);
       if (!support.supported) throw new Error('H.264 High Profile not supported');
@@ -411,7 +374,6 @@ class App {
           if (encodeError || done || frameIndex * frameMs > ms + 300) { resolve(); return; }
           const timestamp = Math.round(frameIndex * (1_000_000 / FPS));
           try {
-            // Render the current animation frame at full 1080×1920 — not an upscale
             this.stage._drawExportFrame(exportCanvas, W, H);
             const vf = new VideoFrame(exportCanvas, { timestamp });
             encoder.encode(vf, { keyFrame: frameIndex % (FPS * 2) === 0 });

@@ -3,14 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Asku Lasku — Say it in every language</title>
+  <title>Say it in every language</title>
   <meta name="description" content="Type any phrase and watch it flip through 30+ languages in a satisfying split-flap display. Export as GIF or video.">
-  <meta property="og:title" content="Asku Lasku — Say it in every language">
+  <meta property="og:title" content="Say it in every language">
   <meta property="og:description" content="Type any phrase. Watch it bloom across 30+ languages.">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- Syne 800 for the bold board display; Space Grotesk as a fallback Latin; Inter for UI -->
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=Space+Grotesk:wght@700&family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&family=Noto+Sans:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Tamil:wght@400;700&family=Noto+Sans+Thai:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700&family=Noto+Serif:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -20,7 +19,6 @@
   <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
     <defs>
       <filter id="morphThreshold">
-        <!-- High-contrast threshold: pixels above ~55% opacity become opaque, rest transparent -->
         <feColorMatrix in="SourceGraphic" type="matrix"
           values="1 0 0 0 0
                   0 1 0 0 0
@@ -30,18 +28,6 @@
     </defs>
   </svg>
 
-  <!-- ── Navigation ───────────────────────────────────────────────────────── -->
-  <nav id="nav">
-    <a href="index.html" class="logo">
-      <span class="logo-primary">Asku Lasku</span>
-      <span class="logo-secondary">ஆஸ்கு லாஸ்கு</span>
-    </a>
-    <div class="nav-right">
-      <a href="about.html" class="nav-link">About</a>
-      <button id="themeToggle" class="theme-btn" aria-label="Toggle theme">☽</button>
-    </div>
-  </nav>
-
   <!-- ── Main ─────────────────────────────────────────────────────────────── -->
   <main class="main">
 
@@ -49,7 +35,6 @@
     <div class="right-col">
       <div class="board-wrap">
         <canvas id="stage" role="img" aria-label="Split-flap translation display"></canvas>
-        <!-- Morph overlay: DOM text + SVG gooey filter — only active in morph mode -->
         <div class="morph-overlay" id="morphOverlay" aria-hidden="true">
           <span class="morph-text" id="morphText1"></span>
           <span class="morph-text" id="morphText2"></span>
@@ -63,53 +48,58 @@
     <!-- Left column: controls -->
     <div class="left-col">
 
-      <!-- Panels: switch between idle / loading / playback -->
-      <div class="panels">
+      <!-- Hero: always visible -->
+      <div class="hero-section">
+        <h1 class="hero-heading">
+          Say it in<br>
+          <em class="serif">every language.</em>
+        </h1>
+        <p class="hero-sub">
+          Type a word or phrase. Watch it morph through 30+ languages,
+          then export as GIF or video.
+        </p>
 
-        <!-- Idle: input -->
-        <div id="inputPanel">
-          <h1 class="hero-heading">
-            Say it in<br>
-            <em class="serif">every language.</em>
-          </h1>
-          <p class="hero-sub">
-            Type a word or phrase. Watch it morph through 30+ languages,
-            then export as GIF or video.
-          </p>
+        <div class="input-row">
+          <input
+            type="text"
+            id="phraseInput"
+            class="phrase-input"
+            placeholder="love, peace, hello world…"
+            maxlength="80"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Word or phrase to translate"
+          >
+          <button id="animateBtn" class="animate-btn" aria-label="Start animation">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
+            Animate
+          </button>
+        </div>
+      </div>
 
-          <div class="input-row">
-            <input
-              type="text"
-              id="phraseInput"
-              class="phrase-input"
-              placeholder="love, peace, hello world…"
-              maxlength="80"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Word or phrase to translate"
-            >
-            <button id="animateBtn" class="animate-btn" aria-label="Start animation">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-              Animate
-            </button>
-          </div>
+      <!-- Status zone: swaps between idle / loading / playing -->
+      <div class="status-zone">
 
+        <!-- Idle: language badges -->
+        <div id="badgesPanel" class="status-panel">
           <div id="langBadges" aria-label="Supported languages"></div>
         </div>
 
         <!-- Loading -->
-        <div id="loadingPanel" class="hidden">
-          <div class="spin" role="progressbar" aria-label="Loading translations"></div>
-          <p class="load-label">
-            Translating into <strong id="loadCount">0</strong> languages…
-          </p>
+        <div id="loadingPanel" class="status-panel hidden">
+          <div class="loading-row">
+            <div class="spin" role="progressbar" aria-label="Loading translations"></div>
+            <p class="load-label">
+              Translating into <strong id="loadCount">0</strong> languages…
+            </p>
+          </div>
           <div id="loadingItems" aria-live="polite"></div>
         </div>
 
         <!-- Playback controls -->
-        <div id="playbackPanel" class="hidden">
+        <div id="playbackPanel" class="status-panel hidden">
           <div id="progressWrap">
             <div id="progressBar" role="progressbar" aria-valuemin="0" aria-valuemax="100">
               <div id="progressFill"></div>
@@ -133,14 +123,6 @@
               <svg id="playIcon" width="15" height="15" viewBox="0 0 24 24"
                    fill="currentColor" class="hidden">
                 <path d="M8 5v14l11-7z"/>
-              </svg>
-            </button>
-
-            <button id="loopBtn" class="ctrl-btn" title="Loop" aria-label="Toggle loop" aria-pressed="false">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/>
-                <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/>
               </svg>
             </button>
 
@@ -169,7 +151,7 @@
           </div>
         </div>
 
-      </div><!-- /.panels -->
+      </div><!-- /.status-zone -->
 
       <!-- Bottom controls: always visible -->
       <div class="bottom-controls">
