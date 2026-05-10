@@ -52,8 +52,8 @@ class Stage {
     this.onLangChange = null;
     this.onComplete   = null;
 
-    // Watermark text drawn on export frames (set from app.js)
-    this.watermarkText = '';
+    this.qrCodeImg = null;
+    this.siteUrl   = '';
 
     this.resize();
     this._renderDPR = window.devicePixelRatio || 1;
@@ -235,8 +235,6 @@ class Stage {
     if (this.curLines.length || this.nxtLines.length || !useMorph) {
       this._drawVignette();
     }
-
-    if (this.exportMode) this._drawWatermark();
 
     if (!this.isPlaying && !this.curLines.length) this._drawPlaceholder();
   }
@@ -539,21 +537,78 @@ class Stage {
     ctx.fillRect(0, H * 0.93, W, H * 0.07);
   }
 
-  _drawWatermark() {
-    if (!this.watermarkText) return;
-    const ctx = this.ctx;
-    const sc  = this._scale();
-    const pad = Math.round(sc * 18);
+  _drawEndFrame(exportCanvas, W, H) {
+    const ctx = exportCanvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    const saved = {
+      ctx: this.ctx, W: this.W, H: this.H,
+      canvas: this.canvas, renderDPR: this._renderDPR,
+    };
+    this.ctx = ctx; this.W = W; this.H = H;
+    this.canvas = exportCanvas; this._renderDPR = 1;
+
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0,   '#1C1C1C');
+    bg.addColorStop(0.5, '#0E0E0E');
+    bg.addColorStop(1,   '#070707');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    this._applyGrain();
+
+    const cx = W / 2;
+    const sc = H / 640;
+
     ctx.save();
-    ctx.globalAlpha   = 0.48;
-    ctx.textAlign     = 'right';
-    ctx.textBaseline  = 'bottom';
-    ctx.direction     = 'ltr';
-    ctx.font          = `400 ${Math.round(sc * 11)}px 'Inter',sans-serif`;
-    ctx.letterSpacing = '0.04em';
-    ctx.fillStyle     = '#ffffff';
-    ctx.fillText(this.watermarkText, this.W - pad, this.H - pad);
+    ctx.font         = `800 ${Math.round(sc * 36)}px ${FONT}`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.direction    = 'ltr';
+    ctx.fillStyle    = '#F5F0E8';
+    ctx.fillText('Say it in', cx, H * 0.31);
     ctx.restore();
+
+    ctx.save();
+    ctx.font         = `italic 400 ${Math.round(sc * 34)}px 'Instrument Serif', Georgia, serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.direction    = 'ltr';
+    ctx.fillStyle    = '#F5F0E8';
+    ctx.fillText('every language.', cx, H * 0.31 + sc * 52);
+    ctx.restore();
+
+    const qrSize = Math.round(W * 0.36);
+    const qrX    = Math.round(cx - qrSize / 2);
+    const qrY    = Math.round(H * 0.43);
+    if (this.qrCodeImg?.complete && this.qrCodeImg.naturalWidth > 0) {
+      ctx.drawImage(this.qrCodeImg, qrX, qrY, qrSize, qrSize);
+    }
+    const afterQR = qrY + qrSize;
+
+    ctx.save();
+    ctx.font          = `500 ${Math.round(sc * 13)}px 'Inter', sans-serif`;
+    ctx.textAlign     = 'center';
+    ctx.textBaseline  = 'middle';
+    ctx.direction     = 'ltr';
+    ctx.fillStyle     = '#F5A623';
+    ctx.letterSpacing = '0.05em';
+    ctx.fillText(this.siteUrl, cx, afterQR + sc * 44);
+    ctx.restore();
+
+    ctx.save();
+    ctx.font          = `400 ${Math.round(sc * 9)}px 'Inter', sans-serif`;
+    ctx.textAlign     = 'center';
+    ctx.textBaseline  = 'middle';
+    ctx.direction     = 'ltr';
+    ctx.fillStyle     = 'rgba(255,255,255,0.28)';
+    ctx.letterSpacing = '0.12em';
+    ctx.fillText('SCAN TO TRY IT YOURSELF', cx, afterQR + sc * 70);
+    ctx.restore();
+
+    this._drawVignette();
+
+    this.ctx = saved.ctx; this.W = saved.W; this.H = saved.H;
+    this.canvas = saved.canvas; this._renderDPR = saved.renderDPR;
   }
 
   // ── High-resolution export frame rendering ────────────────────────────────────────────

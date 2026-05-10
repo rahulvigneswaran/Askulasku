@@ -98,7 +98,8 @@ class App {
     this.stage.onComplete   = () => this._onComplete();
     this.stage.setLoop(true);
     this.stage.start();
-    this.stage.watermarkText = window.location.hostname || 'sayitineverylanguage.com';
+    this.stage.siteUrl = window.location.hostname || 'sayitineverylanguage.com';
+    this._loadQR();
 
     // Resize observer
     const ro = new ResizeObserver(() => this.stage.resize());
@@ -149,6 +150,7 @@ class App {
     this.$ppBtn.addEventListener('click',     () => this._togglePause());
     document.getElementById('downloadBtn')?.addEventListener('click',  () => this._download());
     document.getElementById('shareBtn')?.addEventListener('click',     () => this._share());
+    document.getElementById('instaBtn')?.addEventListener('click',     () => this._share());
     document.getElementById('whatsappBtn')?.addEventListener('click',  () => this._shareWhatsApp());
 
     // Speed slider: real-time label update + live pace change during playback
@@ -371,6 +373,24 @@ class App {
         captureFrame();
       });
 
+      const endFrameCount = Math.round(FPS * 3);
+      await new Promise(resolve => {
+        let i = 0;
+        const captureEnd = () => {
+          if (encodeError || i >= endFrameCount) { resolve(); return; }
+          const timestamp = frameIndex * frameDuration;
+          try {
+            this.stage._drawEndFrame(exportCanvas, W, H);
+            const vf = new VideoFrame(exportCanvas, { timestamp, duration: frameDuration });
+            encoder.encode(vf, { keyFrame: i === 0 });
+            vf.close();
+          } catch (e) { console.error('end frame error', e); }
+          frameIndex++; i++;
+          setTimeout(captureEnd, 0);
+        };
+        captureEnd();
+      });
+
       if (encodeError) throw encodeError;
       await encoder.flush();
       muxer.finalize();
@@ -404,16 +424,40 @@ class App {
     if (navigator.canShare?.({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'Say it in every language', text: window.location.href });
-      } catch (e) { if (e.name !== 'AbortError') this._toast('Share failed.', 'error'); }
-    } else {
-      this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
-      this._toast('Video saved! Upload it to Instagram as a Reel.', 'success');
+        return;
+      } catch (e) { if (e.name === 'AbortError') return; }
     }
+    this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
+    this._toast('Saved! Open Instagram → New Reel to share.', 'success');
   }
 
-  _shareWhatsApp() {
+  async _shareWhatsApp() {
+    if (this.isExporting) return;
+    const blob = await this._renderVideoBlob();
+    if (!blob) { this._toast('Export failed.', 'error'); return; }
+    const file = new File([blob], `asku-lasku-${this._slug()}.mp4`, { type: 'video/mp4' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Say it in every language', text: window.location.href });
+        return;
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
     const text = `Say it in every language 🌍\n${window.location.href}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
+
+  // ── QR code loader ─────────────────────────────────────────────────────────
+  async _loadQR() {
+    try {
+      const url = window.location.href;
+      const api = `https://api.qrserver.com/v1/create-qr-code/?size=420x420&color=F5A623&bgcolor=0E0E0E&qzone=2&data=${encodeURIComponent(url)}`;
+      const res = await fetch(api);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const img  = new Image();
+      img.onload = () => { this.stage.qrCodeImg = img; };
+      img.src    = URL.createObjectURL(blob);
+    } catch { /* QR unavailable — end frame shows URL text only */ }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
