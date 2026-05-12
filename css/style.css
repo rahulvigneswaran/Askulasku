@@ -485,31 +485,38 @@ a { color: inherit; }
 }
 .export-btn:hover { background: var(--bg2); color: var(--text); }
 
-/* ── Cooking progress bar ────────────────────────────────────────────────── */
-.cooking-panel { margin-top: 0.65rem; }
+/* ── Render progress bar ─────────────────────────────────────────────────── */
+.cooking-panel {
+  margin-top:    0.75rem;
+  padding:       0.75rem 0.9rem;
+  background:    var(--bg2);
+  border:        1px solid var(--border);
+  border-radius: var(--radius);
+}
 
 .cooking-header {
   display:         flex;
   justify-content: space-between;
-  font-size:       0.7rem;
-  font-weight:     500;
-  color:           var(--muted);
-  margin-bottom:   0.35rem;
+  align-items:     center;
+  font-size:       0.8rem;
+  font-weight:     600;
+  color:           var(--text);
+  margin-bottom:   0.55rem;
 }
 
 .cooking-bar {
-  height:       3px;
-  background:   var(--border2);
+  height:        6px;
+  background:    var(--border2);
   border-radius: 99px;
-  overflow:     hidden;
+  overflow:      hidden;
 }
 
 .cooking-fill {
-  height:       100%;
-  width:        0%;
-  background:   var(--accent);
+  height:        100%;
+  width:         0%;
+  background:    var(--accent);
   border-radius: 99px;
-  transition:   width 0.12s linear;
+  transition:    width 0.12s linear;
 }
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */

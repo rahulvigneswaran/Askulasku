@@ -413,21 +413,23 @@ class App {
     if (this.isExporting) return;
     this._setCooking(0);
     const blob = await this._renderVideoBlob(p => this._setCooking(p));
-    this._setCooking(null);
-    if (!blob) { this._toast('Export failed.', 'error'); return; }
+    if (!blob) { this._setCooking(null); this._toast('Export failed.', 'error'); return; }
     this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
+    setTimeout(() => this._setCooking(null), 1500);
   }
 
   _setCooking(p) {
     const panel = document.getElementById('cookingPanel');
     const fill  = document.getElementById('cookingFill');
     const pct   = document.getElementById('cookingPct');
+    const label = document.getElementById('cookingLabel');
     if (!panel) return;
     if (p === null) { panel.classList.add('hidden'); return; }
     panel.classList.remove('hidden');
     const v = Math.round(p * 100);
     fill.style.width = v + '%';
     pct.textContent  = v + '%';
+    if (label) label.textContent = v >= 100 ? 'Downloading…' : 'Rendering…';
   }
 
   // ── QR code loader ─────────────────────────────────────────────────────────
