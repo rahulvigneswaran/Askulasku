@@ -415,17 +415,34 @@ class App {
     const blob = await this._renderVideoBlob(p => this._setCooking(p));
     if (!blob) { this._setCooking(null); this._toast('Export failed.', 'error'); return; }
     this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
-    setTimeout(() => this._setCooking(null), 1500);
+    this._setCooking('done');
+    setTimeout(() => this._setCooking(null), 2200);
   }
 
   _setCooking(p) {
-    const panel = document.getElementById('cookingPanel');
-    const fill  = document.getElementById('cookingFill');
-    const pct   = document.getElementById('cookingPct');
-    const label = document.getElementById('cookingLabel');
+    const panel   = document.getElementById('cookingPanel');
+    const fill    = document.getElementById('cookingFill');
+    const pct     = document.getElementById('cookingPct');
+    const label   = document.getElementById('cookingLabel');
+    const pbPanel = document.getElementById('playbackPanel');
     if (!panel) return;
-    if (p === null) { panel.classList.add('hidden'); return; }
-    panel.classList.remove('hidden');
+
+    if (p === null) {
+      panel.classList.remove('active');
+      pbPanel?.classList.remove('cooking-active');
+      return;
+    }
+
+    if (p === 'done') {
+      fill.classList.add('done');
+      pct.textContent  = '✓';
+      if (label) label.textContent = 'Downloaded!';
+      return;
+    }
+
+    panel.classList.add('active');
+    pbPanel?.classList.add('cooking-active');
+    fill.classList.remove('done');
     const v = Math.round(p * 100);
     fill.style.width = v + '%';
     pct.textContent  = v + '%';

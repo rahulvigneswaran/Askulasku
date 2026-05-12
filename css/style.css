@@ -487,11 +487,35 @@ a { color: inherit; }
 
 /* ── Render progress bar ─────────────────────────────────────────────────── */
 .cooking-panel {
-  margin-top:    0.75rem;
-  padding:       0.75rem 0.9rem;
+  overflow:       hidden;
+  max-height:     0;
+  margin-top:     0;
+  border-radius:  var(--radius);
+  pointer-events: none;
+  transition:
+    max-height  0.34s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top  0.28s ease;
+}
+
+.cooking-panel.active {
+  max-height:     120px;
+  margin-top:     0.85rem;
+  pointer-events: auto;
+}
+
+.cooking-inner {
+  padding:       0.8rem 0.9rem;
   background:    var(--bg2);
   border:        1px solid var(--border);
   border-radius: var(--radius);
+  opacity:       0;
+  transform:     translateY(7px);
+  transition:    opacity 0.24s ease 0.1s, transform 0.24s ease 0.1s;
+}
+
+.cooking-panel.active .cooking-inner {
+  opacity:   1;
+  transform: translateY(0);
 }
 
 .cooking-header {
@@ -516,7 +540,21 @@ a { color: inherit; }
   width:         0%;
   background:    var(--accent);
   border-radius: 99px;
-  transition:    width 0.12s linear;
+  transition:    width 0.14s linear, background 0.3s ease;
+}
+.cooking-fill.done { background: #16a34a; }
+
+/* Playback controls fade out while rendering */
+#progressWrap,
+#controls {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+#playbackPanel.cooking-active #progressWrap,
+#playbackPanel.cooking-active #controls {
+  opacity:        0;
+  transform:      translateY(-5px);
+  pointer-events: none;
 }
 
 /* ── Toast ───────────────────────────────────────────────────────────────── */
