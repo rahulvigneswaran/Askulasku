@@ -1,6 +1,6 @@
 'use strict';
 
-// ── Translation ───────────────────────────────────────────────────────────────
+// ── Translation ─────────────────────────────────────────────────────────────────────────────
 
 async function gtranslate(text, langCode) {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${langCode}&dt=t&q=${encodeURIComponent(text)}`;
@@ -44,7 +44,7 @@ async function fetchOne(lang, phrase) {
   return null;
 }
 
-// ── Speed helpers ─────────────────────────────────────────────────────────────
+// ── Speed helpers ─────────────────────────────────────────────────────────────────────────────
 
 function speedToMs(v) {
   // speed 1 (very slow) → 22 000ms; speed 5 (medium) → ~13 600ms; speed 10 (fast) → 3 000ms
@@ -60,7 +60,7 @@ function speedLabel(v) {
   return 'Fast';
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── App ─────────────────────────────────────────────────────────────────────────────────
 
 class App {
   constructor() {
@@ -111,7 +111,7 @@ class App {
     this._autoPlayPreview();
   }
 
-  // ── Speed ──────────────────────────────────────────────────────────────────
+  // ── Speed ──────────────────────────────────────────────────────────────────────────
   _getSpeed()   { return parseInt(this.$speedSlider?.value || '1', 10); }
   _getTotalMs() { return speedToMs(this._getSpeed()); }
 
@@ -119,7 +119,7 @@ class App {
     if (this.$speedVal) this.$speedVal.textContent = speedLabel(this._getSpeed());
   }
 
-  // ── Auto-preview "love" on load ────────────────────────────────────────────
+  // ── Auto-preview "love" on load ────────────────────────────────────────────────────
   async _autoPlayPreview() {
     await document.fonts.ready;
     this._isPreview = true;
@@ -142,7 +142,7 @@ class App {
     this.stage.play(this._previewData, speedToMs(1));
   }
 
-  // ── Events ─────────────────────────────────────────────────────────────────
+  // ── Events ──────────────────────────────────────────────────────────────────────────
   _bindEvents() {
     this.$animBtn.addEventListener('click',   () => this._run());
     this.$input.addEventListener('keydown',   e  => { if (e.key === 'Enter') this._run(); });
@@ -177,7 +177,7 @@ class App {
     });
   }
 
-  // ── State machine ──────────────────────────────────────────────────────────
+  // ── State machine ────────────────────────────────────────────────────────────────────
   _state() {
     if (!document.getElementById('loadingPanel').classList.contains('hidden')) return 'loading';
     if (!document.getElementById('playbackPanel').classList.contains('hidden')) return 'playing';
@@ -194,7 +194,7 @@ class App {
     )?.classList.remove('hidden');
   }
 
-  // ── Animate ────────────────────────────────────────────────────────────────
+  // ── Animate ──────────────────────────────────────────────────────────────────────────
   async _run() {
     const phrase = this.$input.value.trim();
     if (!phrase) {
@@ -261,7 +261,7 @@ class App {
     return results;
   }
 
-  // ── Callbacks ──────────────────────────────────────────────────────────────
+  // ── Callbacks ────────────────────────────────────────────────────────────────────────
   _onLang({ index, total }) {
     this.$counter.textContent  = `${index + 1} / ${total}`;
     this.$progFill.style.width = `${((index + 1) / total) * 100}%`;
@@ -275,7 +275,7 @@ class App {
     this.isPaused = true;
   }
 
-  // ── Controls ───────────────────────────────────────────────────────────────
+  // ── Controls ──────────────────────────────────────────────────────────────────────────
   _back() {
     if (this._state() === 'idle') return;
     this._isPreview = false;
@@ -304,7 +304,7 @@ class App {
     this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
   }
 
-  // ── Export — shared render ─────────────────────────────────────────────────
+  // ── Export — shared render ─────────────────────────────────────────────────────────────
   async _renderVideoBlob(onProgress) {
     this.isExporting = true;
     this.stage.exportMode = true;
@@ -414,7 +414,7 @@ class App {
     this._setCooking(0);
     const blob = await this._renderVideoBlob(p => this._setCooking(p));
     if (!blob) { this._setCooking(null); this._toast('Export failed.', 'error'); return; }
-    this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
+    this._dl(blob, `say-in-every-language-${this._slug()}.mp4`);
     this._setCooking('done');
     setTimeout(() => this._setCooking(null), 2200);
   }
@@ -449,7 +449,7 @@ class App {
     if (label) label.textContent = v >= 100 ? 'Downloading…' : 'Rendering…';
   }
 
-  // ── QR code loader ─────────────────────────────────────────────────────────
+  // ── QR code loader ───────────────────────────────────────────────────────────────────
   async _loadQR() {
     try {
       const url = window.location.href;
@@ -463,7 +463,7 @@ class App {
     } catch { /* QR unavailable — end frame shows URL text only */ }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────────────────────────────────
   _dl(blob, name) {
     const a = Object.assign(document.createElement('a'), {
       href: URL.createObjectURL(blob), download: name

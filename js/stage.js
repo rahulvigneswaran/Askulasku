@@ -565,7 +565,7 @@ class Stage {
     ctx.textBaseline = 'middle';
     ctx.direction    = 'ltr';
     ctx.fillStyle    = '#F5F0E8';
-    ctx.fillText('Say it in', cx, H * 0.31);
+    ctx.fillText('Say in', cx, H * 0.31);
     ctx.restore();
 
     ctx.save();
@@ -611,7 +611,7 @@ class Stage {
     this.canvas = saved.canvas; this._renderDPR = saved.renderDPR;
   }
 
-  // ── High-resolution export frame rendering ────────────────────────────────────────────
+  // ── High-resolution export frame rendering ────────────────────────────────────────────────
   _drawExportFrame(exportCanvas, W, H) {
     const scale = W / this.W;
 
