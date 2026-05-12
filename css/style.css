@@ -485,7 +485,7 @@ a { color: inherit; }
 }
 .export-btn:hover { background: var(--bg2); color: var(--text); }
 
-/* ── Cooking progress bar ────────────────────────────────────────────────────── */
+/* ── Cooking progress bar ────────────────────────────────────────────────── */
 .cooking-panel { margin-top: 0.65rem; }
 
 .cooking-header {

@@ -304,7 +304,7 @@ class App {
     this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
   }
 
-  // ── Export ───────────────────────────────────────────────────────────────────
+  // ── Export — shared render ─────────────────────────────────────────────────
   async _renderVideoBlob(onProgress) {
     this.isExporting = true;
     this.stage.exportMode = true;
