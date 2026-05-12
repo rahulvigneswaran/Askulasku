@@ -1,6 +1,7 @@
 # Say in every language
-
 Type any word or phrase and watch it morph through 30+ languages in a beautiful animation. Export as video to share anywhere.
+
+<img width="1280" height="720" alt="Recording at 2026-05-12 20 49 09-Edited" src="https://github.com/user-attachments/assets/da50d069-32aa-4679-9570-7436b390c850" />
 
 ## Features
 
