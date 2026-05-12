@@ -1,4 +1,4 @@
-/* ── Variables ────────────────────────────────────────────────────────────── */
+/* ── Variables ────────────────────────────────────────────────────────────────── */
 :root {
   --bg:       #FAFAF8;
   --bg2:      #F2F1EE;
@@ -52,7 +52,7 @@ body {
 a { color: inherit; }
 .hidden { display: none !important; }
 
-/* ── Main: two-column desktop / stacked mobile ───────────────────────────── */
+/* ── Main: two-column desktop / stacked mobile ───────────────────────────────── */
 .main {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -121,7 +121,7 @@ a { color: inherit; }
   padding: 1.5rem 0;
 }
 
-/* ── Board ───────────────────────────────────────────────────────────────── */
+/* ── Board ────────────────────────────────────────────────────────────────── */
 .board-wrap {
   position: relative;
   height: min(calc(100vh - 3rem), 640px);
@@ -142,7 +142,7 @@ a { color: inherit; }
   background: #131313;
 }
 
-/* ── Morph overlay ───────────────────────────────────────────────────────── */
+/* ── Morph overlay ─────────────────────────────────────────────────────────────── */
 .morph-overlay {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -168,7 +168,7 @@ a { color: inherit; }
   color: #F5F0E8;
 }
 
-/* ── Board caption ───────────────────────────────────────────────────────── */
+/* ── Board caption ─────────────────────────────────────────────────────────────── */
 .board-caption {
   font-size: 0.75rem;
   color: var(--subtle);
@@ -190,7 +190,7 @@ a { color: inherit; }
   50%       { opacity: 0.35; transform: scale(0.65); }
 }
 
-/* ── Hero ────────────────────────────────────────────────────────────────── */
+/* ── Hero ──────────────────────────────────────────────────────────────────── */
 .hero-heading {
   font-size: clamp(1.85rem, 3vw, 2.75rem);
   font-weight: 700;
@@ -214,7 +214,7 @@ a { color: inherit; }
   margin-bottom: 1.5rem;
 }
 
-/* ── Input row ───────────────────────────────────────────────────────────── */
+/* ── Input row ────────────────────────────────────────────────────────────────── */
 .input-row {
   display: flex;
   gap: 0.5rem;
@@ -283,7 +283,7 @@ a { color: inherit; }
 }
 .badge.dim { color: var(--subtle); border-style: dashed; }
 
-/* ── Bottom controls shared styles ───────────────────────────────────────── */
+/* ── Bottom controls shared styles ─────────────────────────────────────────────── */
 .ctrl-section { display: flex; flex-direction: column; gap: 0.4rem; }
 
 .ctrl-section-label {
@@ -294,7 +294,7 @@ a { color: inherit; }
   color: var(--subtle);
 }
 
-/* ── Mode toggle ─────────────────────────────────────────────────────────── */
+/* ── Mode toggle ────────────────────────────────────────────────────────────────── */
 .mode-toggle {
   display: flex;
   gap: 0;
@@ -325,7 +325,7 @@ a { color: inherit; }
 }
 .mode-btn:not(.active):hover { color: var(--text); }
 
-/* ── Speed control ───────────────────────────────────────────────────────── */
+/* ── Speed control ─────────────────────────────────────────────────────────────── */
 .speed-header { display: flex; justify-content: space-between; align-items: baseline; }
 
 .speed-val {
@@ -372,7 +372,7 @@ a { color: inherit; }
   color: var(--subtle);
 }
 
-/* ── Loading state ───────────────────────────────────────────────────────── */
+/* ── Loading state ─────────────────────────────────────────────────────────────── */
 .loading-row {
   display: flex;
   align-items: center;
@@ -414,7 +414,7 @@ a { color: inherit; }
 }
 @keyframes popIn { from { opacity:0; transform: scale(0.82); } to { opacity:1; transform: scale(1); } }
 
-/* ── Playback controls ───────────────────────────────────────────────────── */
+/* ── Playback controls ─────────────────────────────────────────────────────────────── */
 #progressWrap {
   display: flex;
   align-items: center;
@@ -485,7 +485,7 @@ a { color: inherit; }
 }
 .export-btn:hover { background: var(--bg2); color: var(--text); }
 
-/* ── Render progress bar ─────────────────────────────────────────────────── */
+/* ── Render progress bar ─────────────────────────────────────────────────────────────── */
 .cooking-panel {
   overflow:       hidden;
   max-height:     0;
@@ -557,7 +557,7 @@ a { color: inherit; }
   pointer-events: none;
 }
 
-/* ── Toast ───────────────────────────────────────────────────────────────── */
+/* ── Toast ──────────────────────────────────────────────────────────────────── */
 .toast {
   position:    fixed;
   bottom:      1.5rem;
@@ -584,7 +584,7 @@ a { color: inherit; }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-/* ── About page ──────────────────────────────────────────────────────────── */
+/* ── About page ────────────────────────────────────────────────────────────────── */
 .about-main  { max-width: 680px; margin: 0 auto; padding: 3.5rem 2rem 6rem; }
 
 .back-link {
@@ -649,7 +649,7 @@ a { color: inherit; }
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-/* ── Responsive: mobile (<768px) ─────────────────────────────────────────── */
+/* ── Responsive: mobile (<768px) ───────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
   .main {
     display:        flex;
@@ -690,7 +690,7 @@ a { color: inherit; }
   #controls      { flex-wrap: wrap; }
 }
 
-/* ── Narrow desktop (768-1000px) ─────────────────────────────────────────── */
+/* ── Narrow desktop (768-1000px) ─────────────────────────────────────────────────────────────── */
 @media (min-width: 768px) and (max-width: 1000px) {
   .main      { gap: 2rem; padding: 0 1.5rem; }
   .left-col  { padding-right: 0; }
