@@ -148,10 +148,7 @@ class App {
     this.$input.addEventListener('keydown',   e  => { if (e.key === 'Enter') this._run(); });
     this.$backBtn.addEventListener('click',   () => this._back());
     this.$ppBtn.addEventListener('click',     () => this._togglePause());
-    document.getElementById('downloadBtn')?.addEventListener('click',  () => this._download());
-    document.getElementById('shareBtn')?.addEventListener('click',     () => this._share());
-    document.getElementById('instaBtn')?.addEventListener('click',     () => this._share());
-    document.getElementById('whatsappBtn')?.addEventListener('click',  () => this._shareWhatsApp());
+    document.getElementById('shareBtn')?.addEventListener('click', () => this._cook());
 
     // Speed slider: real-time label update + live pace change during playback
     this.$speedSlider?.addEventListener('input', () => {
@@ -307,18 +304,20 @@ class App {
     this.$ppPlay.classList.toggle('hidden',  !this.isPaused);
   }
 
-  // ── Export — shared render ─────────────────────────────────────────────────
-  async _renderVideoBlob() {
+  // ── Export ───────────────────────────────────────────────────────────────────
+  async _renderVideoBlob(onProgress) {
     this.isExporting = true;
     this.stage.exportMode = true;
-    this._toast('Recording…', 'info');
 
     try {
       const W   = 1080, H = 1920;
       const FPS = 30;
       const ms  = this._getTotalMs();
-      const frameMs       = 1000 / FPS;
-      const frameDuration = Math.round(1_000_000 / FPS);
+      const frameMs        = 1000 / FPS;
+      const frameDuration  = Math.round(1_000_000 / FPS);
+      const mainFrameCount = Math.ceil(ms / frameMs);
+      const endFrameCount  = Math.round(FPS * 3);
+      const totalFrames    = mainFrameCount + endFrameCount;
 
       const exportCanvas = new OffscreenCanvas(W, H);
 
@@ -358,6 +357,7 @@ class App {
       await new Promise(resolve => {
         const captureFrame = () => {
           if (encodeError || simulatedMs >= ms) { resolve(); return; }
+          if (onProgress) onProgress(frameIndex / totalFrames);
           const timestamp = frameIndex * frameDuration;
           try {
             this.stage._drawExportFrame(exportCanvas, W, H);
@@ -373,11 +373,11 @@ class App {
         captureFrame();
       });
 
-      const endFrameCount = Math.round(FPS * 3);
       await new Promise(resolve => {
         let i = 0;
         const captureEnd = () => {
           if (encodeError || i >= endFrameCount) { resolve(); return; }
+          if (onProgress) onProgress((mainFrameCount + i) / totalFrames);
           const timestamp = frameIndex * frameDuration;
           try {
             this.stage._drawEndFrame(exportCanvas, W, H);
@@ -390,6 +390,7 @@ class App {
         };
         captureEnd();
       });
+      if (onProgress) onProgress(1);
 
       if (encodeError) throw encodeError;
       await encoder.flush();
@@ -408,42 +409,25 @@ class App {
     }
   }
 
-  async _download() {
+  async _cook() {
     if (this.isExporting) return;
-    const blob = await this._renderVideoBlob();
+    this._setCooking(0);
+    const blob = await this._renderVideoBlob(p => this._setCooking(p));
+    this._setCooking(null);
     if (!blob) { this._toast('Export failed.', 'error'); return; }
     this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
-    this._toast('Video saved!', 'success');
   }
 
-  async _share() {
-    if (this.isExporting) return;
-    const blob = await this._renderVideoBlob();
-    if (!blob) { this._toast('Export failed.', 'error'); return; }
-    const file = new File([blob], `asku-lasku-${this._slug()}.mp4`, { type: 'video/mp4' });
-    if (navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Say it in every language', text: window.location.href });
-        return;
-      } catch (e) { if (e.name === 'AbortError') return; }
-    }
-    this._dl(blob, `asku-lasku-${this._slug()}.mp4`);
-    this._toast('Saved! Open Instagram → New Reel to share.', 'success');
-  }
-
-  async _shareWhatsApp() {
-    if (this.isExporting) return;
-    const blob = await this._renderVideoBlob();
-    if (!blob) { this._toast('Export failed.', 'error'); return; }
-    const file = new File([blob], `asku-lasku-${this._slug()}.mp4`, { type: 'video/mp4' });
-    if (navigator.canShare?.({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Say it in every language', text: window.location.href });
-        return;
-      } catch (e) { if (e.name === 'AbortError') return; }
-    }
-    const text = `Say it in every language 🌍\n${window.location.href}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  _setCooking(p) {
+    const panel = document.getElementById('cookingPanel');
+    const fill  = document.getElementById('cookingFill');
+    const pct   = document.getElementById('cookingPct');
+    if (!panel) return;
+    if (p === null) { panel.classList.add('hidden'); return; }
+    panel.classList.remove('hidden');
+    const v = Math.round(p * 100);
+    fill.style.width = v + '%';
+    pct.textContent  = v + '%';
   }
 
   // ── QR code loader ─────────────────────────────────────────────────────────
